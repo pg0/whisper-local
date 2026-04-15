@@ -50,16 +50,16 @@ That's it. No login. No cloud account. No paid tier.
 ## Build
 
 ```bash
-cargo build --release                          # full: ~10 MB, ~380 MB RAM (overlay child included)
-cargo build --release --no-default-features    # min:  ~3.6 MB, ~15 MB RAM, no GUI at all
+cargo build --release                                                    # full
+cargo build --release --no-default-features --features transcribe-file   # min
 ```
 
-| build | binary | steady-state RAM | overlay | drop-window | speakers | Settings UI |
-|-------|--------|------------------|---------|-------------|----------|-------------|
-| **full** | 10 MB  | ~380 MB | yes | yes | yes | yes |
-| **min**  | 3.6 MB | ~15 MB  | —   | —   | —   | edit `config.toml` directly |
+| build | binary | idle RAM | overlay | drop-window | speakers | Settings UI |
+|-------|--------|----------|---------|-------------|----------|-------------|
+| **full** | 10 MB | ~380 MB | yes | yes | yes | yes |
+| **min**  | 10 MB | ~15 MB  | —   | yes | —   | yes |
 
-Min is the same hotkey-driven tray app, just stripped to the bone — no eframe, no wgpu, no GPU stack. If you only want push-to-talk dictation and don't need the floating recording bar or the file-drop window, min is the one.
+Min keeps the drag-and-drop file transcriber and the Settings window but skips the always-on overlay child process — that drops idle RAM from ~380 MB to ~15 MB. Open the file-drop window only when you need it (a transient ~250 MB while it's on screen, then back to 15 MB).
 
 ## Run
 
