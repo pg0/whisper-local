@@ -31,6 +31,13 @@ double-click tray icon      →  drag-and-drop file transcriber
 right-click tray icon       →  microphone, language, settings
 ```
 
+> **Hands-free mode (optional)** — In Settings you can enable *Hands-free*. Then just hold
+> `Ctrl+Win` and keep holding: after **2 seconds** (editable) recording auto-latches, so
+> you can let go and keep talking. After **5 seconds of silence** (editable) recording
+> stops automatically and the transcript is typed out. Threshold for what counts as
+> silence is editable too (default RMS `0.01`). Off by default; all three numbers live
+> right next to their checkbox with the defaults shown beside each field.
+
 ---
 
 ## ✨ Key features

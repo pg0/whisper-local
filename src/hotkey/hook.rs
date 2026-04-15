@@ -59,6 +59,20 @@ unsafe extern "system" fn ll_keyboard_proc(
     CallNextHookEx(HHOOK::default(), code, wparam, lparam)
 }
 
+/// Hands-free: force state machine into Latched so chord-release doesn't stop.
+pub fn force_latch() {
+    if let Some(s) = SHARED.get() {
+        s.machine.lock().force_latch();
+    }
+}
+
+/// Reset state machine to Idle (called after auto-stop fires).
+pub fn force_idle() {
+    if let Some(s) = SHARED.get() {
+        s.machine.lock().force_idle();
+    }
+}
+
 pub fn spawn_hook(tx: Sender<HotkeyEvent>) -> anyhow::Result<()> {
     let (timer_tx, timer_rx) = crossbeam_channel::bounded::<Instant>(8);
     let shared = Shared {

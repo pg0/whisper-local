@@ -128,6 +128,20 @@ impl Machine {
         }
     }
 
+    /// Force transition into Latched state (used by hands-free auto-latch).
+    /// Chord-release will no longer stop recording; next chord press stops.
+    pub fn force_latch(&mut self) {
+        if let S::Recording { .. } = self.state {
+            self.state = S::Latched;
+        }
+    }
+
+    /// Force transition to Idle (used after auto-stop so next chord press starts
+    /// fresh rather than being interpreted as stop-latched).
+    pub fn force_idle(&mut self) {
+        self.state = S::Idle;
+    }
+
     /// Called by the timer when the double-tap window elapses.
     pub fn double_tap_expired(&mut self, now: Instant) -> Option<HotkeyEvent> {
         if let S::MaybeDoubleTap { since } = self.state {

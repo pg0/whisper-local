@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 20260415 (Hands-free)
+- **Files changed:** `src/config.rs`, `src/settings_ui.rs`, `src/hotkey/state.rs`, `src/hotkey/hook.rs`, `src/hotkey/mod.rs`, `src/main.rs`, `README.md`
+- **What changed:** Added optional hands-free mode. Settings gains checkbox "Hands-free (auto-latch on hold, auto-stop on silence)" with three editable numeric fields: auto-latch hold seconds (default 2.0), auto-stop silence seconds (default 5.0), silence RMS threshold (default 0.01). RMS-consumer thread in `start_capture` now also watches wall-clock for auto-latch (calls new `hotkey::force_latch`, shows latched overlay) and last-loud time for auto-stop (calls `force_idle` + sends `StopAndTranscribe` via app channel). Each numeric field renders a "(default: …)" weak label beside it; Whisper URL field got the same hint. Settings window widened to 560×460. README gained a hands-free block after the shortcut table. Config defaults are conservative so behaviour stays opt-in.
+
 ## 20260414 (Task 11)
 - **Files changed:** `src/main.rs`
 - **What changed:** Task 11 — Replaced stub main.rs with full controller loop. Wires hotkey, audio, whisper, overlay, tray, and settings. `--settings` child-process branch spawns settings UI and exits. Main loop polls tray via `Tray::try_recv()` every 100ms timeout cycle. `AudioCapture::stop()` called on main thread (cpal::Stream is !Send); WAV bytes handed off to background thread for Whisper HTTP call. Settings spawned as child process; on exit sends `ReloadConfig`. Log rotation at 1 MiB.

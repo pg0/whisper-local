@@ -9,7 +9,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use whisper_local::audio::AudioCapture;
 use whisper_local::config::Config;
-use whisper_local::hotkey::{spawn_hook, HotkeyEvent};
+use whisper_local::hotkey::{force_idle, force_latch, spawn_hook, HotkeyEvent};
 use whisper_local::overlay::{self, OverlayCmd, OverlayHandle};
 use whisper_local::tray::{Tray, TrayEvent};
 use whisper_local::{inject, whisper};
@@ -92,10 +92,10 @@ fn main() -> anyhow::Result<()> {
         match app_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(AppMsg::Hotkey(ev)) => match ev {
                 HotkeyEvent::StartRecording => {
-                    start_capture(&cfg, &recording, &overlay, false, &mut tray)
+                    start_capture(&cfg, &recording, &overlay, false, &mut tray, &app_tx)
                 }
                 HotkeyEvent::StartLatched => {
-                    start_capture(&cfg, &recording, &overlay, true, &mut tray)
+                    start_capture(&cfg, &recording, &overlay, true, &mut tray, &app_tx)
                 }
                 HotkeyEvent::StopAndTranscribe => {
                     stop_and_transcribe(&cfg, &recording, &overlay, &mut tray)
@@ -217,6 +217,7 @@ fn start_capture(
     overlay: &OverlayHandle,
     latched: bool,
     tray: &mut Tray,
+    app_tx: &crossbeam_channel::Sender<AppMsg>,
 ) {
     let mic = cfg.lock().mic_name.clone();
     log::info!(
@@ -227,15 +228,54 @@ fn start_capture(
         Ok(cap) => {
             let rms_rx = cap.rms_rx.clone();
             let ov_tx = overlay.0.clone();
+            let overlay_hf = overlay.clone();
+            let app_tx_hf = app_tx.clone();
+            let (hf_enabled, hold_secs, silence_secs, silence_thresh) = {
+                let c = cfg.lock();
+                (
+                    c.hands_free,
+                    c.auto_latch_hold_secs,
+                    c.auto_stop_silence_secs,
+                    c.silence_rms_threshold,
+                )
+            };
             std::thread::spawn(move || {
                 let mut count = 0u32;
                 let mut max_rms: f32 = 0.0;
                 let mut sum_rms: f32 = 0.0;
+                let start = std::time::Instant::now();
+                let mut last_loud = start;
+                let mut auto_latched = latched;
+                let mut auto_stopped = false;
                 while let Ok(r) = rms_rx.recv() {
                     count += 1;
                     if r > max_rms { max_rms = r; }
                     sum_rms += r;
                     let _ = ov_tx.send(OverlayCmd::PushRms(r));
+                    if hf_enabled && !auto_stopped {
+                        let now = std::time::Instant::now();
+                        if !auto_latched
+                            && now.duration_since(start).as_secs_f32() >= hold_secs
+                        {
+                            auto_latched = true;
+                            force_latch();
+                            overlay_hf.show_latched();
+                            log::info!("hands-free: auto-latched after {hold_secs}s");
+                        }
+                        if r >= silence_thresh {
+                            last_loud = now;
+                        } else if auto_latched
+                            && now.duration_since(last_loud).as_secs_f32() >= silence_secs
+                        {
+                            auto_stopped = true;
+                            log::info!(
+                                "hands-free: auto-stop after {silence_secs}s silence"
+                            );
+                            force_idle();
+                            let _ = app_tx_hf
+                                .send(AppMsg::Hotkey(HotkeyEvent::StopAndTranscribe));
+                        }
+                    }
                 }
                 let mean = if count > 0 { sum_rms / count as f32 } else { 0.0 };
                 log::info!(

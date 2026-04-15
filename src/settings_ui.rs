@@ -18,7 +18,7 @@ pub fn open(initial: Config) -> Config {
     let state_for_ui = state.clone();
     let mut vb = egui::ViewportBuilder::default()
         .with_title("whisper-local — Settings")
-        .with_inner_size([440.0, 340.0])
+        .with_inner_size([560.0, 460.0])
         .with_resizable(false);
     if let Some(ic) = crate::app_icon::icon_data() {
         vb = vb.with_icon(ic);
@@ -89,7 +89,10 @@ impl eframe::App for SettingsApp {
 
             ui.add_space(8.0);
             ui.label("Whisper server URL:");
-            ui.text_edit_singleline(&mut st.cfg.whisper.base_url);
+            ui.horizontal(|ui| {
+                ui.text_edit_singleline(&mut st.cfg.whisper.base_url);
+                ui.weak("(default: http://localhost:10010)");
+            });
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {
@@ -127,6 +130,51 @@ impl eframe::App for SettingsApp {
                     st.cfg.enable_speaker_detection = spk;
                 }
             }
+
+            ui.add_space(8.0);
+            let mut hf = st.cfg.hands_free;
+            if ui
+                .checkbox(&mut hf, "Hands-free (auto-latch on hold, auto-stop on silence)")
+                .on_hover_text(
+                    "While holding the chord, auto-latch after the hold-seconds so you can \
+                     release. Recording auto-stops after N seconds of silence.",
+                )
+                .changed()
+            {
+                st.cfg.hands_free = hf;
+            }
+            ui.add_enabled_ui(st.cfg.hands_free, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Auto-latch after holding");
+                    ui.add(
+                        egui::DragValue::new(&mut st.cfg.auto_latch_hold_secs)
+                            .speed(0.1)
+                            .clamp_range(0.5..=30.0)
+                            .suffix(" s"),
+                    );
+                    ui.weak("(default: 2.0 s)");
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Auto-stop after silence");
+                    ui.add(
+                        egui::DragValue::new(&mut st.cfg.auto_stop_silence_secs)
+                            .speed(0.1)
+                            .clamp_range(0.5..=60.0)
+                            .suffix(" s"),
+                    );
+                    ui.weak("(default: 5.0 s)");
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Silence RMS threshold");
+                    ui.add(
+                        egui::DragValue::new(&mut st.cfg.silence_rms_threshold)
+                            .speed(0.001)
+                            .clamp_range(0.0..=1.0)
+                            .max_decimals(4),
+                    );
+                    ui.weak("(default: 0.01)");
+                });
+            });
 
             ui.add_space(8.0);
             let mut enabled = st.autostart_enabled;
