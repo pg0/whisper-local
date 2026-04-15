@@ -1,40 +1,60 @@
 # whisper-local
 
-**Local-first voice-to-text for Windows 11.** Tray app that records on a global hotkey and types the transcript into the focused window. Audio never leaves your machine — it's POSTed to a Whisper server you control.
+**Hold a key. Speak. Release. It types.**
+
+Lightweight • Private • Local
+
+A Windows tray app that turns your microphone into a keyboard, anywhere on your system. Audio never leaves your machine — every transcription is POSTed to a Whisper server *you* run, in Docker or WSL2 on the same box.
 
 ```
-Ctrl+Win  hold to record   →  release to transcribe + type
+Ctrl+Win  hold to record    →  release, transcript types into the focused app
 Ctrl+Win  double-tap        →  latched mode; tap again to stop
-double-click tray icon      →  open drag-and-drop file transcriber
+double-click tray icon      →  drag-and-drop file transcriber
 ```
 
 ## Why local-first
 
-Cloud transcription means uploading every recording to a third party. whisper-local talks to a Whisper server **on your own machine** (Docker container or WSL2). Your voice and any dropped audio/video stay on your hardware. No API keys, no rate limits, no transcripts in someone else's logs.
+Most voice-to-text products ship your microphone to a server farm and your transcripts to a database you can't see. Some go further and screenshot your active window for "context." That's an unusual permission model for something you talk to all day.
+
+whisper-local goes the other way:
+
+- **Your audio never leaves your machine.** It's a localhost POST to a Whisper server you started.
+- **No telemetry. No accounts. No rate limits. No subscription.**
+- **No screen capture. No clipboard sniffing. No background context-gathering.** It records when you hold the hotkey and shuts up when you release it.
+- **You own the model.** Swap `faster-whisper-large-v3-turbo` for any OpenAI-compatible Whisper server you trust.
+
+If your machine is offline, it still works — as long as your Whisper server is reachable on `localhost`.
+
+## What you get
+
+- **Push-to-talk dictation** — hold `Ctrl+Win`, speak, release. Transcript types into whatever window has focus: editor, browser, terminal, Slack, anywhere `SendInput` reaches.
+- **Latched mode** — double-tap the hotkey for hands-free recording; tap again to stop.
+- **Drag-and-drop file transcriber** — drop any audio or video file (mp3, wav, m4a, mp4, mkv, webm, ogg, flac, opus, …) onto a small window and get a `.txt` or clipboard copy.
+- **Language picker** — auto-detect or pin an ISO code (English, Deutsch, Français, Español, Italiano, Português, Polski, Русский, 中文, 日本語, 한국어, …). Native scripts render correctly.
+- **Optional speaker diarization** — when enabled in settings: Auto, Exactly N, or Pitch-based 2-speaker. Per-speaker copy + save once detected.
+- **Microphone picker, autostart, custom Whisper URL** — all in a small settings window. No web dashboard.
+- **Three build flavours** — full, minimal (no speaker UI), pure (just the hotkey + mic).
 
 ## Requirements
 
 - **Windows 11**
-- A locally running **Whisper HTTP server** that exposes `POST /v1/audio/transcriptions` (OpenAI-compatible) and `GET /health`. Default target: `http://localhost:10010`. Tested with **faster-whisper-large-v3-turbo** in Docker / WSL2.
-- (Optional) any process manager at `http://localhost:9999/start` to auto-wake Whisper on demand.
+- A locally running **Whisper HTTP server** exposing OpenAI-compatible endpoints:
+  - `POST /v1/audio/transcriptions` (multipart audio file in)
+  - `GET  /health`
+- Default target: `http://localhost:10010`. Configurable in Settings.
+- Tested against **faster-whisper-large-v3-turbo** running in Docker on the same machine, and the same model running in WSL2 with CUDA.
 
-## Features
-
-- Hotkey-driven mic capture (push-to-talk + latched).
-- Drag-and-drop file transcriber: audio and video, any format ffmpeg understands.
-- Language picker (auto-detect or pick ISO code).
-- Optional speaker diarization (Auto / Exactly N / Pitch-based 2-speaker).
-- Per-speaker copy + save (`.txt`) when multiple speakers detected.
-- Live floating overlay with mic-level waveform.
-- CJK + Cyrillic + Hangul rendering (Segoe UI + system CJK fonts loaded as fallback).
+That's it. No login. No cloud account. No paid tier.
 
 ## Build
 
 ```bash
-cargo build --release                                                    # full (~10 MB)
+cargo build --release                                                    # full
 cargo build --release --no-default-features --features transcribe-file   # min:  no speaker UI
 cargo build --release --no-default-features                              # pure: mic + tray only
 ```
+
+Three binaries land in `target/release/`. Pick the one that matches what you need; the rest stays out of your taskbar and out of your RAM.
 
 ## Run
 
@@ -42,15 +62,21 @@ cargo build --release --no-default-features                              # pure:
 ./target/release/whisper-local.exe
 ```
 
-Right-click the tray icon → **Settings** to pick microphone, set the Whisper URL, choose a language, toggle autostart, or enable speaker detection.
+A tray icon appears. Right-click → **Settings** to pick a microphone, set the Whisper URL, choose a language, toggle autostart, or enable speaker detection.
+
+Then forget it's there until you press `Ctrl+Win`.
 
 ## Config
 
-`%APPDATA%\whisper-local\config.toml` — auto-created with defaults.
+`%APPDATA%\whisper-local\config.toml` — auto-created with sane defaults. Edit it directly or use the Settings window.
 
 ## Log
 
-`%APPDATA%\whisper-local\log.txt` — rotated at 1 MB. `WHISPER_DEBUG=1` for verbose.
+`%APPDATA%\whisper-local\log.txt` — rotated at 1 MB. `WHISPER_DEBUG=1` for verbose output.
+
+## Status
+
+Early. The core flow (hotkey → record → Whisper → type) is solid; the file-drop window is solid. The floating recording overlay is currently disabled while a multi-window threading bug gets sorted — for now the tray icon swaps colour when recording. Expect the rough edges of a one-person tool that's still shaping up.
 
 ## License
 
