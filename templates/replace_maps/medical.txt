@@ -1,0 +1,13 @@
+# medical replace map (sample)
+# Add domain-specific words / abbreviations here.
+# format: trigger:replacement   (one per line, # = comment)
+
+# common abbreviations
+b p:BP
+e c g:ECG
+m r i:MRI
+c t scan:CT scan
+i v:IV
+
+# fix whisper mishearings (regex)
+# /\bhippo crates\b/i:Hippocrates

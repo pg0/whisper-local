@@ -47,6 +47,9 @@ egui         = { version = "0.27", optional = true }
 tray-icon    = "0.13"
 image        = { version = "0.25", default-features = false, features = ["png"] }
 arboard      = "3"
+regex        = "1"
+md-5         = "0.10"
+sha2         = "0.10"
 rfd          = { version = "0.14", default-features = false, optional = true }
 
 [dependencies.windows]

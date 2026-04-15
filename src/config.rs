@@ -13,6 +13,15 @@ pub struct Config {
     pub language: String,
     /// When true, press Enter after every transcript written back.
     pub newline_feed: bool,
+    /// When true, transcripts that don't match a replace-map rule are dropped
+    /// (no text is typed). Lets the app run as a pure voice-command surface.
+    pub command_mode: bool,
+    /// Master switch for the replace-map machinery. When false, no file in
+    /// replace_maps/ is loaded.
+    pub replace_maps_enabled: bool,
+    /// Basenames of `*.txt` files inside `replace_maps/` that are currently
+    /// active. New files default to off until checked in the tray.
+    pub enabled_replace_maps: Vec<String>,
     /// When true, after you've held the chord for `auto_hold_secs` seconds, keep
     /// recording on its own so you can let go.
     pub auto_hold: bool,
@@ -36,6 +45,9 @@ impl Default for Config {
             enable_speaker_detection: false,
             language: String::new(),
             newline_feed: false,
+            command_mode: false,
+            replace_maps_enabled: true,
+            enabled_replace_maps: vec!["global.txt".into()],
             auto_hold: false,
             auto_hold_secs: 2.0,
             silence_rms_threshold: 0.01,

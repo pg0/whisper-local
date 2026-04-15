@@ -1,0 +1,46 @@
+# whisper-local replace map
+# format: trigger:replacement   (one per line, # = comment)
+# only fires when a chunk transcribes to ONLY the trigger (alone),
+# case-insensitive, trailing punctuation/period gets stripped.
+# escapes: \n = newline (press Enter), \t = tab, \\ = literal backslash.
+
+# --- personal ---
+my email:email@example.com
+my github:https://github.com/USERNAME
+my website:https://example.com
+my phone:+49 000 000 0000
+
+# --- api keys (placeholders — replace with real keys) ---
+hugging face api key:hf_xxxxxxxxxxxxxxxxxxxxxxxxxxx
+openai api key:sk-xxxxxxxxxxxxxxxxxxxxxxxx
+anthropic api key:sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx
+
+# --- symbols ---
+arrow:→
+right arrow:→
+left arrow:←
+up arrow:↑
+down arrow:↓
+em dash:—
+ellipsis:…
+checkmark:✓
+cross:✗
+degree:°
+
+# --- common snippets ---
+shrug:¯\_(ツ)_/¯
+table flip:(╯°□°)╯︵ ┻━┻
+fingers crossed:🤞
+thumbs up:👍
+
+# --- markdown / code ---
+triple backtick:```
+inline code:``
+
+# --- prose helpers ---
+sincerely:Best regards,\nPatrick
+
+# multi-line example (use \n for line breaks)
+my signature:--\nName\nemail@example.com\nhttps://example.com
+bullet:•
+section:§

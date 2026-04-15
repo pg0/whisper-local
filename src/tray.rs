@@ -11,6 +11,10 @@ pub enum TrayEvent {
     SelectMic(String),
     SelectLanguage(String),
     ToggleNewlineFeed(bool),
+    ToggleCommandMode(bool),
+    OpenReplaceMapsFolder,
+    ToggleReplaceMaps(bool),
+    ToggleReplaceMapFile(String, bool),
     #[cfg(feature = "transcribe-file")]
     OpenTranscribeFile,
 }
@@ -23,6 +27,10 @@ pub struct Tray {
     settings_id: tray_icon::menu::MenuId,
     quit_id: tray_icon::menu::MenuId,
     newline_feed_item: CheckMenuItem,
+    command_mode_item: CheckMenuItem,
+    open_replace_maps_folder_id: tray_icon::menu::MenuId,
+    replace_maps_enabled_item: CheckMenuItem,
+    replace_map_file_items: Vec<(CheckMenuItem, String)>,
     /// Mic entries: (CheckMenuItem, mic name where "" = default). Handle kept
     /// so we can toggle checks to simulate radio-group behavior.
     mic_items: Vec<(CheckMenuItem, String)>,
@@ -35,6 +43,10 @@ impl Tray {
         current_mic: &str,
         current_language: &str,
         newline_feed: bool,
+        command_mode: bool,
+        replace_maps_enabled: bool,
+        all_replace_maps: &[String],
+        active_replace_maps: &[String],
     ) -> anyhow::Result<Self> {
         let idle = load_icon(include_bytes!("../assets/tray_idle.png"))?;
         let active = load_icon(include_bytes!("../assets/tray_active.png"))?;
@@ -78,8 +90,34 @@ impl Tray {
         menu.append(&PredefinedMenuItem::separator())?;
 
         let newline_feed_item =
-            CheckMenuItem::new("NewLineFeed", true, newline_feed, None);
+            CheckMenuItem::new("NewLine", true, newline_feed, None);
         menu.append(&newline_feed_item)?;
+        let command_mode_item =
+            CheckMenuItem::new("Command mode (drop non-command speech)", true, command_mode, None);
+        menu.append(&command_mode_item)?;
+
+        let replace_maps_submenu = Submenu::new("Replace maps", true);
+        let replace_maps_enabled_item =
+            CheckMenuItem::new("Enabled", true, replace_maps_enabled, None);
+        replace_maps_submenu.append(&replace_maps_enabled_item)?;
+        replace_maps_submenu.append(&PredefinedMenuItem::separator())?;
+
+        let mut replace_map_file_items: Vec<(CheckMenuItem, String)> = Vec::new();
+        for name in all_replace_maps {
+            let checked = active_replace_maps.iter().any(|n| n == name);
+            let item = CheckMenuItem::new(name, true, checked, None);
+            replace_maps_submenu.append(&item)?;
+            replace_map_file_items.push((item, name.clone()));
+        }
+        if !replace_map_file_items.is_empty() {
+            replace_maps_submenu.append(&PredefinedMenuItem::separator())?;
+        }
+
+        let open_replace_maps_folder_item =
+            MenuItem::new("replace_maps folder", true, None);
+        replace_maps_submenu.append(&open_replace_maps_folder_item)?;
+        let open_replace_maps_folder_id = open_replace_maps_folder_item.id().clone();
+        menu.append(&replace_maps_submenu)?;
         menu.append(&PredefinedMenuItem::separator())?;
 
         #[cfg(feature = "gui")]
@@ -106,6 +144,10 @@ impl Tray {
             settings_id,
             quit_id,
             newline_feed_item,
+            command_mode_item,
+            open_replace_maps_folder_id,
+            replace_maps_enabled_item,
+            replace_map_file_items,
             mic_items,
             lang_items,
         })
@@ -126,6 +168,27 @@ impl Tray {
             if e.id == self.newline_feed_item.id() {
                 let enabled = self.newline_feed_item.is_checked();
                 return Some(TrayEvent::ToggleNewlineFeed(enabled));
+            }
+            if e.id == self.command_mode_item.id() {
+                let enabled = self.command_mode_item.is_checked();
+                return Some(TrayEvent::ToggleCommandMode(enabled));
+            }
+            if e.id == self.open_replace_maps_folder_id {
+                return Some(TrayEvent::OpenReplaceMapsFolder);
+            }
+            if e.id == self.replace_maps_enabled_item.id() {
+                let enabled = self.replace_maps_enabled_item.is_checked();
+                return Some(TrayEvent::ToggleReplaceMaps(enabled));
+            }
+            if let Some((item, name)) = self
+                .replace_map_file_items
+                .iter()
+                .find(|(item, _)| item.id() == &e.id)
+            {
+                return Some(TrayEvent::ToggleReplaceMapFile(
+                    name.clone(),
+                    item.is_checked(),
+                ));
             }
             if let Some(idx) = self.mic_items.iter().position(|(item, _)| item.id() == &e.id) {
                 for (i, (item, _)) in self.mic_items.iter().enumerate() {
@@ -156,6 +219,14 @@ impl Tray {
 
     pub fn set_newline_feed(&mut self, enabled: bool) {
         self.newline_feed_item.set_checked(enabled);
+    }
+
+    pub fn set_command_mode(&mut self, enabled: bool) {
+        self.command_mode_item.set_checked(enabled);
+    }
+
+    pub fn set_replace_maps_enabled(&mut self, enabled: bool) {
+        self.replace_maps_enabled_item.set_checked(enabled);
     }
 
     pub fn set_active(&mut self, active: bool) {

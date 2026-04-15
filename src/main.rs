@@ -57,11 +57,21 @@ fn main() -> anyhow::Result<()> {
         "whisper-local starting; whisper base = {}",
         cfg.lock().whisper.base_url
     );
+    bootstrap_replace_maps();
 
     let overlay = overlay::spawn();
     let mut tray = {
         let c = cfg.lock();
-        Tray::new(&c.mic_name, &c.language, c.newline_feed)?
+        let all = postprocess::list_replace_maps();
+        Tray::new(
+            &c.mic_name,
+            &c.language,
+            c.newline_feed,
+            c.command_mode,
+            c.replace_maps_enabled,
+            &all,
+            &c.enabled_replace_maps,
+        )?
     };
 
     let (hk_tx, hk_rx) = unbounded::<HotkeyEvent>();
@@ -148,6 +158,8 @@ fn main() -> anyhow::Result<()> {
                 });
                 let c = cfg.lock();
                 tray.set_newline_feed(c.newline_feed);
+                tray.set_command_mode(c.command_mode);
+                tray.set_replace_maps_enabled(c.replace_maps_enabled);
                 log::info!(
                     "config reloaded; whisper base = {}",
                     c.whisper.base_url
@@ -218,6 +230,47 @@ fn handle_tray_event(
                 log::error!("save config after newline-feed toggle: {e}");
             }
             log::info!("newline-feed: {}", if enabled { "on" } else { "off" });
+        }
+        TrayEvent::ToggleCommandMode(enabled) => {
+            let mut c = cfg.lock();
+            c.command_mode = enabled;
+            if let Err(e) = c.save() {
+                log::error!("save config after command-mode toggle: {e}");
+            }
+            log::info!("command-mode: {}", if enabled { "on" } else { "off" });
+        }
+        TrayEvent::ToggleReplaceMaps(enabled) => {
+            let mut c = cfg.lock();
+            c.replace_maps_enabled = enabled;
+            if let Err(e) = c.save() {
+                log::error!("save config after replace-maps toggle: {e}");
+            }
+            log::info!("replace-maps: {}", if enabled { "on" } else { "off" });
+        }
+        TrayEvent::OpenReplaceMapsFolder => {
+            if let Some(dir) = postprocess::replace_maps_dir() {
+                let p = dir.clone();
+                std::thread::spawn(move || {
+                    let _ = std::process::Command::new("explorer.exe")
+                        .arg(&p.display().to_string())
+                        .spawn();
+                });
+            }
+        }
+        TrayEvent::ToggleReplaceMapFile(name, enabled) => {
+            let mut c = cfg.lock();
+            c.enabled_replace_maps.retain(|n| n != &name);
+            if enabled {
+                c.enabled_replace_maps.push(name.clone());
+            }
+            if let Err(e) = c.save() {
+                log::error!("save config after replace-map toggle: {e}");
+            }
+            log::info!(
+                "replace-map {}: {}",
+                name,
+                if enabled { "on" } else { "off" }
+            );
         }
         #[cfg(feature = "transcribe-file")]
         TrayEvent::OpenTranscribeFile => {
@@ -374,13 +427,16 @@ fn stop_and_transcribe(
     };
     overlay.hide();
     tray.set_active(false);
-    let (whisper_cfg, language, continuous, newline_feed) = {
+    let (whisper_cfg, language, continuous, newline_feed, command_mode, replace_maps_on, active_maps) = {
         let c = cfg.lock();
         (
             c.whisper.clone(),
             c.language.clone(),
             c.continuous,
             c.newline_feed,
+            c.command_mode,
+            c.replace_maps_enabled,
+            c.enabled_replace_maps.clone(),
         )
     };
     let overlay_clone = overlay.clone();
@@ -408,8 +464,23 @@ fn stop_and_transcribe(
                 match whisper::transcribe(&wav, &language, &whisper_cfg) {
                     Ok(text) if !text.is_empty() => {
                         log::info!("transcript: {}", text);
-                        let map = postprocess::load_replace_map();
-                        match postprocess::process(&text, &map) {
+                        let map = if replace_maps_on {
+                            postprocess::load_replace_map(&active_maps)
+                        } else {
+                            postprocess::ReplaceMap::default()
+                        };
+                        let action = if command_mode {
+                            match postprocess::process_strict(&text, &map) {
+                                Some(a) => a,
+                                None => {
+                                    log::info!("command mode: no rule matched, dropped");
+                                    return;
+                                }
+                            }
+                        } else {
+                            postprocess::process(&text, &map)
+                        };
+                        match action {
                             Action::Enter => inject::press_enter(),
                             Action::Text(raw) => {
                                 let out = if loop_stitch {
@@ -422,6 +493,10 @@ fn stop_and_transcribe(
                                     inject::press_enter();
                                 }
                             }
+                            Action::Run(cmd) => run_shell(&cmd),
+                            Action::Rewrite(url) => rewrite_selection(&url),
+                            Action::Transform(name) => transform_selection(&name),
+                            Action::Keys(seq) => inject::send_keys(&seq),
                         }
                     }
                     Ok(_) => log::info!("empty transcript"),
@@ -461,6 +536,143 @@ fn dump_wav_to_disk(wav: &[u8]) -> anyhow::Result<()> {
     let _ = std::fs::write(debug_dir.join(format!("{ts}.wav")), wav);
     log::info!("wrote {}", last.display());
     Ok(())
+}
+
+/// On first launch (or on a fresh install), make sure `replace_maps/` exists
+/// and is seeded with `global.txt`, `medical.txt`, `legal.txt`. Also migrate
+/// the legacy root `replace_map.txt` into `replace_maps/global.txt` if the
+/// new file isn't there yet.
+fn bootstrap_replace_maps() {
+    let Some(dir) = postprocess::replace_maps_dir() else {
+        return;
+    };
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::error!("create replace_maps dir: {e}");
+        return;
+    }
+    let global = dir.join("global.txt");
+    if !global.exists() {
+        // Migrate legacy file if present.
+        let legacy = whisper_local::config::config_dir()
+            .ok()
+            .map(|d| d.join("replace_map.txt"));
+        if let Some(legacy) = legacy.filter(|p| p.exists()) {
+            let _ = std::fs::copy(&legacy, &global);
+            log::info!("migrated {} -> {}", legacy.display(), global.display());
+        } else {
+            let _ = std::fs::write(
+                &global,
+                include_str!("../templates/replace_maps/global.txt"),
+            );
+        }
+    }
+    for (name, contents) in [
+        ("medical.txt", include_str!("../templates/replace_maps/medical.txt")),
+        ("legal.txt", include_str!("../templates/replace_maps/legal.txt")),
+        ("programming.txt", include_str!("../templates/replace_maps/programming.txt")),
+        ("launch.txt", include_str!("../templates/replace_maps/launch.txt")),
+    ] {
+        let p = dir.join(name);
+        if !p.exists() {
+            let _ = std::fs::write(&p, contents);
+        }
+    }
+}
+
+/// Read the current selection (Ctrl+C → clipboard), apply a built-in transform,
+/// type the result back over the selection.
+fn transform_selection(name: &str) {
+    let name = name.to_string();
+    log::info!("transform_selection: {name}");
+    std::thread::spawn(move || {
+        inject::send_copy();
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        let s = match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("transform_selection: clipboard read: {e}");
+                return;
+            }
+        };
+        let out = apply_transform(&name, &s);
+        match out {
+            Some(out) => inject::type_text(&out),
+            None => log::warn!("transform_selection: unknown transform `{name}`"),
+        }
+    });
+}
+
+fn apply_transform(name: &str, s: &str) -> Option<String> {
+    use sha2::Digest;
+    Some(match name {
+        "lower" | "lowercase" => s.to_lowercase(),
+        "upper" | "uppercase" => s.to_uppercase(),
+        "trim" => s.trim().to_string(),
+        "reverse" => s.chars().rev().collect(),
+        "md5" => format!("{:x}", md5::Md5::digest(s.as_bytes())),
+        "sha256" => format!("{:x}", sha2::Sha256::digest(s.as_bytes())),
+        _ => return None,
+    })
+}
+
+/// Spawn a shell command via `cmd /c`. Used by replace_map `!`-prefixed entries
+/// to launch programs by voice (e.g. `start battlefield:!"C:\bf.exe"`).
+fn run_shell(cmd: &str) {
+    let cmd = cmd.to_string();
+    log::info!("run_shell: {cmd}");
+    std::thread::spawn(move || {
+        let r = std::process::Command::new("cmd")
+            .args(["/c", &cmd])
+            .spawn();
+        if let Err(e) = r {
+            log::error!("run_shell spawn: {e}");
+        }
+    });
+}
+
+/// Send Ctrl+C to copy the current selection, POST it to `url` as a plain-text
+/// body, then type the response back. Used by replace_map `>>`-prefixed entries.
+fn rewrite_selection(url: &str) {
+    let url = url.to_string();
+    log::info!("rewrite_selection: {url}");
+    std::thread::spawn(move || {
+        inject::send_copy();
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        let selection = match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("rewrite_selection: clipboard read failed: {e}");
+                return;
+            }
+        };
+        if selection.trim().is_empty() {
+            log::warn!("rewrite_selection: empty selection, skipping POST");
+            return;
+        }
+        let resp = match reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .and_then(|c| {
+                c.post(&url)
+                    .header("Content-Type", "text/plain; charset=utf-8")
+                    .body(selection)
+                    .send()
+            }) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("rewrite_selection: POST {url}: {e}");
+                return;
+            }
+        };
+        if !resp.status().is_success() {
+            log::error!("rewrite_selection: HTTP {}", resp.status());
+            return;
+        }
+        match resp.text() {
+            Ok(body) => inject::type_text(&body),
+            Err(e) => log::error!("rewrite_selection: read body: {e}"),
+        }
+    });
 }
 
 /// Loop-mode chunks come back as mini-sentences ("Hello world.") which causes

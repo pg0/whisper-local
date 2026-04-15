@@ -1,0 +1,31 @@
+# launch replace map (sample)
+# format: trigger:replacement   (one per line, # = comment)
+# value prefixes: !cmd  >>https://url  ^keys
+
+# --- apps (! prefix, runs via cmd /c) ---
+open browser:!start chrome
+start calculator:!calc
+open notepad:!notepad
+open explorer:!explorer
+open terminal:!wt
+open vscode:!code
+
+# --- Windows shortcuts ---
+open search:^win+s
+open settings:^win+i
+open run:^win+r
+lock screen:^win+l
+show desktop:^win+d
+task view:^win+tab
+clipboard history:^win+v
+emoji picker:^win+.
+
+# --- regex with parameters (whole-chunk match) ---
+/^google for (.+)$/i:!start "" "https://www.google.com/search?q=$1"
+/^youtube for (.+)$/i:!start "" "https://www.youtube.com/results?search_query=$1"
+/^github for (.+)$/i:!start "" "https://github.com/search?q=$1"
+/^wiki for (.+)$/i:!start "" "https://en.wikipedia.org/wiki/Special:Search?search=$1"
+
+# --- exe paths (edit to your install) ---
+# start battlefield:!"C:\Games\Battlefield\bf.exe"
+# play my favorite song:!start "" "https://youtube.com/?somesong"

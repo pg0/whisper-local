@@ -1,0 +1,39 @@
+# programming replace map (sample)
+# format: trigger:replacement   (one per line, # = comment)
+# value prefixes: !cmd  >>https://url  >>local:transform  ^keys  /regex/
+
+# --- common abbreviations ---
+arrow function:() => {}
+async fn:async function() {}
+console log:console.log()
+print line:System.out.println()
+todo:// TODO:
+fixme:// FIXME:
+
+# --- selection transforms (>>local:NAME) ---
+lowercase selected:>>local:lower
+uppercase selected:>>local:upper
+trim selected:>>local:trim
+reverse selected:>>local:reverse
+md5 selected:>>local:md5
+sha256 selected:>>local:sha256
+
+# --- selection keystrokes (^chord [, chord ...]) ---
+select all:^ctrl+a
+select line:^home,shift+end
+select word:^ctrl+shift+right
+copy selected:^ctrl+c
+cut selected:^ctrl+x
+paste:^ctrl+v
+undo:^ctrl+z
+redo:^ctrl+y
+save:^ctrl+s
+delete line:^home,shift+end,delete
+
+# --- regex with parameters (whole-chunk match) ---
+# /^select all (.+)$/i:^ctrl+f$1
+# /^find next (.+)$/i:^ctrl+f$1\nenter
+
+# --- whisper mishearing fixes (regex substring) ---
+# /\bclode\b/i:Claude
+# /\bjit\b/i:git

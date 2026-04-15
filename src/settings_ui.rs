@@ -96,20 +96,6 @@ impl eframe::App for SettingsApp {
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.label("NewLineFeed:");
-                let current = st.cfg.newline_feed;
-                egui::ComboBox::from_id_source("newline_feed")
-                    .selected_text(if current { "Enabled" } else { "Disabled" })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut st.cfg.newline_feed, false, "Disabled");
-                        ui.selectable_value(&mut st.cfg.newline_feed, true, "Enabled");
-                    });
-            })
-            .response
-            .on_hover_text("When Enabled, press Enter after every transcript.");
-
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
                 ui.label("Language:");
                 let current = st.cfg.language.clone();
                 egui::ComboBox::from_id_source("language")

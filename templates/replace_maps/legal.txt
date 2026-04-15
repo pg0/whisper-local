@@ -1,0 +1,13 @@
+# legal replace map (sample)
+# Add domain-specific words / abbreviations here.
+# format: trigger:replacement   (one per line, # = comment)
+
+# common abbreviations
+n d a:NDA
+l l c:LLC
+e t a l:et al.
+i e:i.e.
+e g:e.g.
+
+# fix whisper mishearings
+# /\bsue donym\b/i:sui generis
