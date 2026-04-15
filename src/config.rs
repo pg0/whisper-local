@@ -11,16 +11,20 @@ pub struct Config {
     pub enable_speaker_detection: bool,
     /// ISO code forwarded as `language` form field. Empty = auto-detect.
     pub language: String,
-    /// Auto-stop: auto-latch after holding the chord for N secs, then auto-stop
-    /// after M secs of silence.
-    pub auto_stop: bool,
-    pub auto_latch_hold_secs: f32,
-    pub auto_stop_silence_secs: f32,
-    /// RMS below this counts as silence for auto-stop.
+    /// When true, press Enter after every transcript written back.
+    pub newline_feed: bool,
+    /// When true, after you've held the chord for `auto_hold_secs` seconds, keep
+    /// recording on its own so you can let go.
+    pub auto_hold: bool,
+    pub auto_hold_secs: f32,
+    /// Always-on: RMS below this counts as silence.
     pub silence_rms_threshold: f32,
-    /// Continuous hands-free: after auto-stop types the transcript, restart
-    /// recording automatically. Loop until user presses the chord to stop.
-    /// Requires `auto_stop` to be on.
+    /// Silence-duration for Stop: pause this long → end session.
+    pub stop_silence_secs: f32,
+    /// When true, stop and transcribe once silence is detected (one-shot).
+    pub auto_stop: bool,
+    /// When true, after the transcript is typed, restart recording in latched
+    /// state and wait for the next silence. Press the chord to break the loop.
     pub continuous: bool,
 }
 
@@ -31,10 +35,12 @@ impl Default for Config {
             whisper: WhisperCfg::default(),
             enable_speaker_detection: false,
             language: String::new(),
-            auto_stop: false,
-            auto_latch_hold_secs: 2.0,
-            auto_stop_silence_secs: 5.0,
+            newline_feed: false,
+            auto_hold: false,
+            auto_hold_secs: 2.0,
             silence_rms_threshold: 0.01,
+            stop_silence_secs: 5.0,
+            auto_stop: false,
             continuous: false,
         }
     }

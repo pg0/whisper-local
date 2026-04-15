@@ -17,7 +17,7 @@ pub fn open(initial: Config) -> Config {
     }));
     let state_for_ui = state.clone();
     let mut vb = egui::ViewportBuilder::default()
-        .with_title("whisper-local — Settings")
+        .with_title("whisper-local")
         .with_inner_size([560.0, 460.0])
         .with_resizable(false);
     if let Some(ic) = crate::app_icon::icon_data() {
@@ -96,6 +96,20 @@ impl eframe::App for SettingsApp {
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {
+                ui.label("NewLineFeed:");
+                let current = st.cfg.newline_feed;
+                egui::ComboBox::from_id_source("newline_feed")
+                    .selected_text(if current { "Enabled" } else { "Disabled" })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut st.cfg.newline_feed, false, "Disabled");
+                        ui.selectable_value(&mut st.cfg.newline_feed, true, "Enabled");
+                    });
+            })
+            .response
+            .on_hover_text("When Enabled, press Enter after every transcript.");
+
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
                 ui.label("Language:");
                 let current = st.cfg.language.clone();
                 egui::ComboBox::from_id_source("language")
@@ -132,60 +146,71 @@ impl eframe::App for SettingsApp {
             }
 
             ui.add_space(8.0);
-            let mut auto_stop = st.cfg.auto_stop;
-            if ui
-                .checkbox(&mut auto_stop, "Auto-stop (auto-latch on hold, stop after silence)")
-                .on_hover_text(
-                    "While holding the chord, auto-latch after the hold-seconds so you can \
-                     release. Recording auto-stops after N seconds of silence.",
-                )
-                .changed()
-            {
-                st.cfg.auto_stop = auto_stop;
-            }
+            let mut auto_hold = st.cfg.auto_hold;
+            ui.horizontal(|ui| {
+                if ui
+                    .checkbox(&mut auto_hold, "Auto-hold after")
+                    .on_hover_text("Hold chord this long → app keeps recording.")
+                    .changed()
+                {
+                    st.cfg.auto_hold = auto_hold;
+                }
+                ui.add_enabled(
+                    st.cfg.auto_hold,
+                    egui::DragValue::new(&mut st.cfg.auto_hold_secs)
+                        .speed(0.1)
+                        .clamp_range(0.5..=30.0)
+                        .suffix(" s"),
+                );
+                ui.weak("(2.0 s)");
+            });
+
             let mut cont = st.cfg.continuous;
             if ui
-                .checkbox(&mut cont, "Loop (continuous hands-free, restart after each transcript)")
-                .on_hover_text(
-                    "After the transcript is typed, recording restarts automatically in \
-                     latched state. Press Ctrl+Win to break out of the loop. \
-                     Needs Auto-stop on to detect when an utterance ends.",
-                )
+                .checkbox(&mut cont, "Continuous typing (type on every short pause)")
+                .on_hover_text("Keep listening; type chunk on each short pause. Ctrl+Win stops.")
                 .changed()
             {
                 st.cfg.continuous = cont;
             }
-            ui.add_enabled_ui(st.cfg.auto_stop, |ui| {
+            ui.add_enabled_ui(st.cfg.continuous, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("Auto-latch after holding");
-                    ui.add(
-                        egui::DragValue::new(&mut st.cfg.auto_latch_hold_secs)
-                            .speed(0.1)
-                            .clamp_range(0.5..=30.0)
-                            .suffix(" s"),
-                    );
-                    ui.weak("(default: 2.0 s)");
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Auto-stop after silence");
-                    ui.add(
-                        egui::DragValue::new(&mut st.cfg.auto_stop_silence_secs)
-                            .speed(0.1)
-                            .clamp_range(0.5..=60.0)
-                            .suffix(" s"),
-                    );
-                    ui.weak("(default: 5.0 s)");
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Silence RMS threshold");
+                    ui.add_space(20.0);
+                    ui.label("Silence threshold");
                     ui.add(
                         egui::DragValue::new(&mut st.cfg.silence_rms_threshold)
                             .speed(0.001)
                             .clamp_range(0.0..=1.0)
                             .max_decimals(4),
                     );
-                    ui.weak("(default: 0.01)");
-                });
+                    ui.weak("(0.01)");
+                })
+                .response
+                .on_hover_text("Mic RMS below this = silence. Also used by Stop.");
+            });
+
+            let mut auto_stop = st.cfg.auto_stop;
+            if ui
+                .checkbox(&mut auto_stop, "Stop on silence (one-shot)")
+                .on_hover_text("End recording after silence.")
+                .changed()
+            {
+                st.cfg.auto_stop = auto_stop;
+            }
+            ui.add_enabled_ui(st.cfg.auto_stop, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space(20.0);
+                    ui.label("Silence duration");
+                    ui.add(
+                        egui::DragValue::new(&mut st.cfg.stop_silence_secs)
+                            .speed(0.1)
+                            .clamp_range(0.5..=60.0)
+                            .suffix(" s"),
+                    );
+                    ui.weak("(5.0 s)");
+                })
+                .response
+                .on_hover_text("Pause this long → end session.");
             });
 
             ui.add_space(8.0);
@@ -219,6 +244,9 @@ impl eframe::App for SettingsApp {
                 if ui.button("Cancel").clicked() {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.weak(concat!("v", env!("CARGO_PKG_VERSION")));
+                });
             });
         });
         ctx.request_repaint_after(Duration::from_millis(250));

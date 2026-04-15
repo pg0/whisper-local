@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 20260415 (v0.1.4)
+- **Files changed:** `Cargo.toml`, `src/config.rs`, `src/settings_ui.rs`, `src/main.rs`, `src/inject.rs`, `src/postprocess.rs` (new), `src/lib.rs`, `src/tray.rs`, `README.md`
+- **What changed:** Continuous typing finalised + post-processing layer.
+  - Loop renamed to "Continuous typing"; hardcoded 0.6 s silence window for realtime feel; silent chunks skipped (content-gate via `had_content` flag); capture restarts BEFORE whisper round-trip so the gap is just the device switchover; per-chunk text post-processed (`stitch_chunk` strips trailing `.`/`!`/`?` and appends a space).
+  - New `postprocess` module: voice commands `new line`/`newline`/`enter`/`return`/`neue zeile`/`zeilenumbruch`/`absatz` (case-insensitive, trailing punctuation tolerated) → press Enter via new `inject::press_enter` (VK_RETURN, not Unicode 0x0A). Plus `replace_map.txt` (`%APPDATA%\whisper-local\replace_map.txt`, format `trigger:replacement`, `#` comments, reloaded on every transcript) — only fires when the entire chunk equals the trigger.
+  - Settings: NewLineFeed combo above Language; auto-hold checkbox + secs; Continuous typing checkbox with shared silence threshold below; Stop on silence checkbox with stop_silence_secs below. Window title trimmed to "whisper-local"; version shown at the bottom-right of the footer row.
+  - Tray: NewLineFeed CheckMenuItem in the right-click menu, syncs both ways with the Settings combo via Config.
+  - `inject.rs`: added `press_enter()` using a real VK_RETURN keypress.
+
 ## 20260415 (v0.1.2)
 - **Files changed:** `Cargo.toml`, `src/config.rs`, `src/settings_ui.rs`, `src/main.rs`, `README.md`
 - **What changed:** Honest naming + real continuous hands-free. Renamed config `hands_free` → `auto_stop` (one-shot: auto-latch on hold + stop on silence). Added new `continuous` flag + checkbox "Loop (continuous hands-free, restart after each transcript)". New `AppMsg::RestartContinuous` + `auto_stop_pending` AtomicBool differentiate silence-triggered stop from user chord-stop. Transcribe background thread sends `RestartContinuous` when `was_auto && cfg.continuous`; main handler starts fresh capture in latched state and force_latches the state machine. Press `Ctrl+Win` once to break the loop (chord-stop clears auto_stop_pending, transcript types, no restart). README block split into "Auto-stop" (one-shot) vs "Loop (continuous hands-free)".

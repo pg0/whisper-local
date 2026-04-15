@@ -10,6 +10,7 @@ pub enum TrayEvent {
     Quit,
     SelectMic(String),
     SelectLanguage(String),
+    ToggleNewlineFeed(bool),
     #[cfg(feature = "transcribe-file")]
     OpenTranscribeFile,
 }
@@ -21,6 +22,7 @@ pub struct Tray {
     #[cfg(feature = "gui")]
     settings_id: tray_icon::menu::MenuId,
     quit_id: tray_icon::menu::MenuId,
+    newline_feed_item: CheckMenuItem,
     /// Mic entries: (CheckMenuItem, mic name where "" = default). Handle kept
     /// so we can toggle checks to simulate radio-group behavior.
     mic_items: Vec<(CheckMenuItem, String)>,
@@ -29,7 +31,11 @@ pub struct Tray {
 }
 
 impl Tray {
-    pub fn new(current_mic: &str, current_language: &str) -> anyhow::Result<Self> {
+    pub fn new(
+        current_mic: &str,
+        current_language: &str,
+        newline_feed: bool,
+    ) -> anyhow::Result<Self> {
         let idle = load_icon(include_bytes!("../assets/tray_idle.png"))?;
         let active = load_icon(include_bytes!("../assets/tray_active.png"))?;
 
@@ -71,6 +77,11 @@ impl Tray {
         menu.append(&mic_submenu)?;
         menu.append(&PredefinedMenuItem::separator())?;
 
+        let newline_feed_item =
+            CheckMenuItem::new("NewLineFeed", true, newline_feed, None);
+        menu.append(&newline_feed_item)?;
+        menu.append(&PredefinedMenuItem::separator())?;
+
         #[cfg(feature = "gui")]
         let settings_id = {
             let settings_item = MenuItem::new("Settings", true, None);
@@ -94,6 +105,7 @@ impl Tray {
             #[cfg(feature = "gui")]
             settings_id,
             quit_id,
+            newline_feed_item,
             mic_items,
             lang_items,
         })
@@ -110,6 +122,10 @@ impl Tray {
             }
             if e.id == self.quit_id {
                 return Some(TrayEvent::Quit);
+            }
+            if e.id == self.newline_feed_item.id() {
+                let enabled = self.newline_feed_item.is_checked();
+                return Some(TrayEvent::ToggleNewlineFeed(enabled));
             }
             if let Some(idx) = self.mic_items.iter().position(|(item, _)| item.id() == &e.id) {
                 for (i, (item, _)) in self.mic_items.iter().enumerate() {
@@ -136,6 +152,10 @@ impl Tray {
             }
         }
         None
+    }
+
+    pub fn set_newline_feed(&mut self, enabled: bool) {
+        self.newline_feed_item.set_checked(enabled);
     }
 
     pub fn set_active(&mut self, active: bool) {

@@ -2,6 +2,32 @@ use std::thread;
 use std::time::Duration;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
+pub fn press_enter() {
+    let down = vk_input(VK_RETURN, false);
+    let up = vk_input(VK_RETURN, true);
+    unsafe {
+        SendInput(&[down, up], std::mem::size_of::<INPUT>() as i32);
+    }
+    thread::sleep(Duration::from_millis(1));
+}
+
+fn vk_input(vk: VIRTUAL_KEY, key_up: bool) -> INPUT {
+    let mut flags = KEYBD_EVENT_FLAGS(0);
+    if key_up { flags |= KEYEVENTF_KEYUP; }
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
 pub fn type_text(s: &str) {
     if s.is_empty() { return; }
     let units: Vec<u16> = s.encode_utf16().collect();

@@ -7,6 +7,7 @@ pub mod config;
 pub mod fonts;
 pub mod hotkey;
 pub mod inject;
+pub mod postprocess;
 pub mod overlay;
 #[cfg(feature = "gui")]
 pub mod settings_ui;

@@ -31,17 +31,15 @@ double-click tray icon      →  drag-and-drop file transcriber
 right-click tray icon       →  microphone, language, settings
 ```
 
-> **Auto-stop** *(optional, Settings)* — Hold `Ctrl+Win` and keep holding. After
-> **2 seconds** (editable) it auto-latches so you can release. After **5 seconds of
-> silence** (editable) recording stops and the transcript is typed out. Silence is
-> defined by an editable RMS threshold (default `0.01`). One-shot: typing ends the
-> session. Off by default.
+Three opt-in checkboxes in Settings:
 >
-> **Loop (continuous hands-free)** *(optional, Settings)* — When Auto-stop is also on,
-> the app restarts recording automatically right after each transcript is typed, in
-> latched state. Keep talking, pause, keep talking, pause… each chunk gets typed.
-> Press `Ctrl+Win` once to break out. Needs Auto-stop to detect when each utterance
-> ends. Off by default.
+> **Auto-hold after** `[2.0 s]` — Hold `Ctrl+Win` this long → app keeps recording. Tap `Ctrl+Win` stops.
+>
+> **Continuous typing** — Keep listening. On every short pause (~0.6 s, fixed), the chunk gets typed and recording restarts. Silent chunks are skipped (no wasted Whisper calls). `Ctrl+Win` stops.
+>
+> **Stop on silence (one-shot)** — After `[5.0 s]` of silence (editable) recording ends and the transcript is typed.
+>
+> Shared: silence threshold `[0.01]` — mic RMS below this counts as silence.
 
 ---
 

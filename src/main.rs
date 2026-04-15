@@ -12,6 +12,7 @@ use whisper_local::audio::AudioCapture;
 use whisper_local::config::Config;
 use whisper_local::hotkey::{force_idle, force_latch, spawn_hook, HotkeyEvent};
 use whisper_local::overlay::{self, OverlayCmd, OverlayHandle};
+use whisper_local::postprocess::{self, Action};
 use whisper_local::tray::{Tray, TrayEvent};
 use whisper_local::{inject, whisper};
 #[cfg(feature = "gui")]
@@ -60,7 +61,7 @@ fn main() -> anyhow::Result<()> {
     let overlay = overlay::spawn();
     let mut tray = {
         let c = cfg.lock();
-        Tray::new(&c.mic_name, &c.language)?
+        Tray::new(&c.mic_name, &c.language, c.newline_feed)?
     };
 
     let (hk_tx, hk_rx) = unbounded::<HotkeyEvent>();
@@ -145,9 +146,11 @@ fn main() -> anyhow::Result<()> {
                     log::error!("reload config: {e}");
                     cfg.lock().clone()
                 });
+                let c = cfg.lock();
+                tray.set_newline_feed(c.newline_feed);
                 log::info!(
                     "config reloaded; whisper base = {}",
-                    cfg.lock().whisper.base_url
+                    c.whisper.base_url
                 );
             }
             Err(RecvTimeoutError::Timeout) => {} // continue, pump tray
@@ -208,6 +211,14 @@ fn handle_tray_event(
                 if code.is_empty() { "(auto)" } else { &code }
             );
         }
+        TrayEvent::ToggleNewlineFeed(enabled) => {
+            let mut c = cfg.lock();
+            c.newline_feed = enabled;
+            if let Err(e) = c.save() {
+                log::error!("save config after newline-feed toggle: {e}");
+            }
+            log::info!("newline-feed: {}", if enabled { "on" } else { "off" });
+        }
         #[cfg(feature = "transcribe-file")]
         TrayEvent::OpenTranscribeFile => {
             let exe = std::env::current_exe()?;
@@ -266,15 +277,22 @@ fn start_capture(
             let overlay_hf = overlay.clone();
             let app_tx_hf = app_tx.clone();
             let auto_stop_pending_w = auto_stop_pending.clone();
-            let (as_enabled, hold_secs, silence_secs, silence_thresh) = {
+            let (hold_enabled, hold_secs, loop_on, stop_on, stop_secs, silence_thresh) = {
                 let c = cfg.lock();
                 (
+                    c.auto_hold,
+                    c.auto_hold_secs,
+                    c.continuous,
                     c.auto_stop,
-                    c.auto_latch_hold_secs,
-                    c.auto_stop_silence_secs,
+                    c.stop_silence_secs,
                     c.silence_rms_threshold,
                 )
             };
+            // Loop uses a fixed silence-window tuned for realtime feel
+            // without fragmenting mid-sentence pauses.
+            const LOOP_SILENCE_SECS: f32 = 0.6;
+            let silence_secs = if loop_on { LOOP_SILENCE_SECS } else { stop_secs };
+            let silence_stops = loop_on || stop_on;
             std::thread::spawn(move || {
                 let mut count = 0u32;
                 let mut max_rms: f32 = 0.0;
@@ -283,29 +301,36 @@ fn start_capture(
                 let mut last_loud = start;
                 let mut auto_latched = latched;
                 let mut auto_stopped = false;
+                let mut had_content = false;
                 while let Ok(r) = rms_rx.recv() {
                     count += 1;
                     if r > max_rms { max_rms = r; }
                     sum_rms += r;
                     let _ = ov_tx.send(OverlayCmd::PushRms(r));
-                    if as_enabled && !auto_stopped {
+                    if !auto_stopped {
                         let now = std::time::Instant::now();
-                        if !auto_latched
+                        // Auto-hold: opt-in.
+                        if hold_enabled
+                            && !auto_latched
                             && now.duration_since(start).as_secs_f32() >= hold_secs
                         {
                             auto_latched = true;
                             force_latch();
                             overlay_hf.show_latched();
-                            log::info!("auto-stop: auto-latched after {hold_secs}s");
+                            log::info!("auto-hold: kept recording after {hold_secs}s");
                         }
+                        // Content vs silence.
                         if r >= silence_thresh {
+                            had_content = true;
                             last_loud = now;
-                        } else if auto_latched
+                        } else if silence_stops
+                            && auto_latched
+                            && had_content
                             && now.duration_since(last_loud).as_secs_f32() >= silence_secs
                         {
                             auto_stopped = true;
                             log::info!(
-                                "auto-stop: fired after {silence_secs}s silence"
+                                "silence-stop: fired after {silence_secs}s silence (had content)"
                             );
                             force_idle();
                             auto_stop_pending_w.store(true, Ordering::SeqCst);
@@ -349,9 +374,14 @@ fn stop_and_transcribe(
     };
     overlay.hide();
     tray.set_active(false);
-    let (whisper_cfg, language, continuous) = {
+    let (whisper_cfg, language, continuous, newline_feed) = {
         let c = cfg.lock();
-        (c.whisper.clone(), c.language.clone(), c.continuous)
+        (
+            c.whisper.clone(),
+            c.language.clone(),
+            c.continuous,
+            c.newline_feed,
+        )
     };
     let overlay_clone = overlay.clone();
     let app_tx_t = app_tx.clone();
@@ -367,20 +397,38 @@ fn stop_and_transcribe(
             if let Err(e) = dump_wav_to_disk(&wav) {
                 log::warn!("dump last.wav: {e}");
             }
+            // In Loop mode, restart capture BEFORE the whisper round-trip so
+            // the gap between utterances is just the device switchover, not
+            // the full whisper + type latency.
+            if was_auto && continuous {
+                let _ = app_tx_t.send(AppMsg::RestartContinuous);
+            }
+            let loop_stitch = was_auto && continuous;
             std::thread::spawn(move || {
                 match whisper::transcribe(&wav, &language, &whisper_cfg) {
                     Ok(text) if !text.is_empty() => {
                         log::info!("transcript: {}", text);
-                        inject::type_text(&text);
+                        let map = postprocess::load_replace_map();
+                        match postprocess::process(&text, &map) {
+                            Action::Enter => inject::press_enter(),
+                            Action::Text(raw) => {
+                                let out = if loop_stitch {
+                                    stitch_chunk(&raw)
+                                } else {
+                                    raw
+                                };
+                                inject::type_text(&out);
+                                if newline_feed {
+                                    inject::press_enter();
+                                }
+                            }
+                        }
                     }
                     Ok(_) => log::info!("empty transcript"),
                     Err(e) => {
                         log::error!("whisper: {e}");
                         overlay_clone.show_error(short_err(&e));
                     }
-                }
-                if was_auto && continuous {
-                    let _ = app_tx_t.send(AppMsg::RestartContinuous);
                 }
             });
         }
@@ -413,6 +461,17 @@ fn dump_wav_to_disk(wav: &[u8]) -> anyhow::Result<()> {
     let _ = std::fs::write(debug_dir.join(format!("{ts}.wav")), wav);
     log::info!("wrote {}", last.display());
     Ok(())
+}
+
+/// Loop-mode chunks come back as mini-sentences ("Hello world.") which causes
+/// periods to pile up and spaces between chunks to vanish. Strip the trailing
+/// sentence terminator Whisper tacks on, collapse surrounding whitespace, and
+/// append a single space so the next chunk lands cleanly after this one.
+fn stitch_chunk(text: &str) -> String {
+    let trimmed = text.trim();
+    let stripped = trimmed.trim_end_matches(|c: char| matches!(c, '.' | '!' | '?'));
+    let base = stripped.trim_end();
+    format!("{base} ")
 }
 
 fn short_err(e: &anyhow::Error) -> String {
