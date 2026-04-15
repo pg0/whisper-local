@@ -1,0 +1,10 @@
+/target
+/target-min
+/target-pure
+/Cargo.lock.bak
+*.rs.bk
+.vscode/
+.idea/
+/.worktrees
+/worktrees
+/docs/superpowers

@@ -1,0 +1,71 @@
+[package]
+name    = "whisper-local"
+version = "0.1.0"
+edition = "2021"
+publish = false
+build   = "build.rs"
+
+[build-dependencies]
+winresource = "0.1"
+
+[lib]
+name = "whisper_local"
+path = "src/lib.rs"
+
+[[bin]]
+name = "whisper-local"
+path = "src/main.rs"
+
+[features]
+default = ["speaker-detection", "transcribe-file"]
+# Full diarization + per-speaker copy/save UI (needs transcribe-file window).
+speaker-detection = ["transcribe-file"]
+# Drag-and-drop file-transcribe window (tray double-click + "Transcribe file").
+# Without it the exe is mic-only + tray.
+transcribe-file = []
+
+[dependencies]
+anyhow       = "1"
+log          = "0.4"
+env_logger   = "0.11"
+serde        = { version = "1", features = ["derive"] }
+toml         = "0.8"
+dirs         = "5"
+cpal         = "0.15"
+rubato       = "0.15"
+hound        = "3"
+reqwest      = { version = "0.12", features = ["blocking", "multipart", "json"] }
+serde_json   = "1"
+crossbeam-channel = "0.5"
+parking_lot  = "0.12"
+once_cell    = "1"
+eframe       = { version = "0.27", default-features = false, features = ["wgpu", "default_fonts"] }
+egui         = "0.27"
+tray-icon    = "0.13"
+image        = { version = "0.25", default-features = false, features = ["png"] }
+arboard      = "3"
+rfd          = { version = "0.14", default-features = false }
+
+[dependencies.windows]
+version  = "0.56"
+features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+  "Win32_System_LibraryLoader",
+  "Win32_Graphics_Gdi",
+]
+
+[dev-dependencies]
+wiremock   = "0.6"
+tokio      = { version = "1", features = ["macros", "rt-multi-thread"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto       = true
+strip     = true
+codegen-units = 1
