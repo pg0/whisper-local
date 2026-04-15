@@ -1,0 +1,13 @@
+cargo:rerun-if-changed=assets/app.ico
+"C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64\\rc.exe"
+Selected RC path: 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\rc.exe'
+RC Output:
+Microsoft (R) Windows (R) Resource Compiler Version 10.0.10011.16384
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+------
+RC Error:
+
+------
+cargo:rustc-link-arg=C:\code\vibes\whisper-local\target-lite\release\build\whisper-local-81def4887599ad4b\out\resource.res

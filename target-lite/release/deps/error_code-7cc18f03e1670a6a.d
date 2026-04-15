@@ -1,0 +1,12 @@
+C:\code\vibes\whisper-local\target-lite\release\deps\error_code-7cc18f03e1670a6a.d: C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\lib.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\defs.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\types.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\utils.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\posix.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\system.rs
+
+C:\code\vibes\whisper-local\target-lite\release\deps\liberror_code-7cc18f03e1670a6a.rlib: C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\lib.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\defs.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\types.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\utils.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\posix.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\system.rs
+
+C:\code\vibes\whisper-local\target-lite\release\deps\liberror_code-7cc18f03e1670a6a.rmeta: C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\lib.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\defs.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\types.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\utils.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\posix.rs C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\system.rs
+
+C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\lib.rs:
+C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\defs.rs:
+C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\types.rs:
+C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\utils.rs:
+C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\posix.rs:
+C:\Users\pg0\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\error-code-3.3.2\src\system.rs:

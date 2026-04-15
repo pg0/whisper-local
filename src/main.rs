@@ -12,7 +12,9 @@ use whisper_local::config::Config;
 use whisper_local::hotkey::{spawn_hook, HotkeyEvent};
 use whisper_local::overlay::{self, OverlayCmd, OverlayHandle};
 use whisper_local::tray::{Tray, TrayEvent};
-use whisper_local::{inject, settings_ui, whisper};
+use whisper_local::{inject, whisper};
+#[cfg(feature = "gui")]
+use whisper_local::settings_ui;
 
 #[allow(dead_code)]
 enum AppMsg {
@@ -24,6 +26,7 @@ enum AppMsg {
 fn main() -> anyhow::Result<()> {
     // Child-process modes.
     let args: Vec<String> = std::env::args().collect();
+    #[cfg(feature = "gui")]
     if args.iter().any(|a| a == "--settings") {
         init_logging();
         let cfg = Config::load()?;
@@ -37,6 +40,7 @@ fn main() -> anyhow::Result<()> {
         whisper_local::transcribe_ui::open(cfg);
         return Ok(());
     }
+    #[cfg(feature = "overlay-ui")]
     if args.iter().any(|a| a == "--overlay") {
         init_logging();
         whisper_local::overlay::run_main_thread();
@@ -127,6 +131,7 @@ fn handle_tray_event(
     app_tx: &crossbeam_channel::Sender<AppMsg>,
 ) -> anyhow::Result<()> {
     match ev {
+        #[cfg(feature = "gui")]
         TrayEvent::OpenSettings => {
             let exe = std::env::current_exe()?;
             let app_tx2 = app_tx.clone();

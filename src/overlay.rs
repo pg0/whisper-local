@@ -1,7 +1,13 @@
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Sender};
+#[cfg(feature = "overlay-ui")]
+use crossbeam_channel::Receiver;
+#[cfg(feature = "overlay-ui")]
 use eframe::{egui, NativeOptions};
+#[cfg(feature = "overlay-ui")]
 use parking_lot::Mutex;
+#[cfg(feature = "overlay-ui")]
 use std::sync::Arc;
+#[cfg(feature = "overlay-ui")]
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
@@ -26,6 +32,16 @@ impl OverlayHandle {
     pub fn quit(&self)  { let _ = self.0.send(OverlayCmd::Quit); }
 }
 
+/// No-op overlay when the feature is disabled. Drains commands silently so
+/// the rest of the app keeps the same `OverlayHandle` API.
+#[cfg(not(feature = "overlay-ui"))]
+pub fn spawn() -> OverlayHandle {
+    let (tx, rx) = unbounded::<OverlayCmd>();
+    std::thread::spawn(move || while rx.recv().is_ok() {});
+    OverlayHandle(tx)
+}
+
+#[cfg(feature = "overlay-ui")]
 #[derive(Clone)]
 enum View {
     Hidden,
@@ -37,6 +53,7 @@ enum View {
     Error { msg: String, until: Instant },
 }
 
+#[cfg(feature = "overlay-ui")]
 struct App {
     rx: Receiver<OverlayCmd>,
     view: Arc<Mutex<View>>,
@@ -45,9 +62,10 @@ struct App {
     peak: Arc<Mutex<f32>>,
 }
 
+#[cfg(feature = "overlay-ui")]
 impl eframe::App for App {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        [0.0, 0.0, 0.0, 0.0] // transparent
+        [0.0, 0.0, 0.0, 0.0] // transparent — wgpu compositor handles this on Windows
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -180,6 +198,7 @@ impl eframe::App for App {
     }
 }
 
+#[cfg(feature = "overlay-ui")]
 fn draw_dot(ui: &mut egui::Ui, rgb: (u8, u8, u8), alpha: f32, radius: f32) {
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(radius * 2.0 + 2.0, radius * 2.0 + 2.0), egui::Sense::hover());
@@ -188,6 +207,7 @@ fn draw_dot(ui: &mut egui::Ui, rgb: (u8, u8, u8), alpha: f32, radius: f32) {
     ui.painter_at(rect).circle_filled(rect.center(), radius, color);
 }
 
+#[cfg(feature = "overlay-ui")]
 fn draw_bars(ui: &mut egui::Ui, bars: &[f32], peak: f32) {
     const BAR_COUNT: usize = 36;
     let avail = ui.available_width().min(140.0).max(60.0);
@@ -227,6 +247,7 @@ fn draw_bars(ui: &mut egui::Ui, bars: &[f32], peak: f32) {
 /// eframe/winit panics when its window is created from a worker thread on
 /// Windows; running the overlay in its own process gives it a real main
 /// thread. Parent → child commands travel as text lines on stdin.
+#[cfg(feature = "overlay-ui")]
 pub fn spawn() -> OverlayHandle {
     let (tx, rx) = unbounded::<OverlayCmd>();
     let exe = match std::env::current_exe() {
@@ -274,6 +295,7 @@ pub fn spawn() -> OverlayHandle {
 /// Run the overlay viewport on the *current* (main) thread of the child
 /// process. Called by `whisper-local.exe --overlay`. Reads command lines
 /// from stdin and forwards them to the eframe App.
+#[cfg(feature = "overlay-ui")]
 pub fn run_main_thread() {
     let (tx, rx) = unbounded::<OverlayCmd>();
     let stdin_tx = tx.clone();
@@ -338,6 +360,7 @@ pub fn run_main_thread() {
     }
 }
 
+#[cfg(feature = "overlay-ui")]
 fn cmd_to_line(cmd: &OverlayCmd) -> String {
     match cmd {
         OverlayCmd::ShowRecording => "REC\n".into(),
@@ -349,6 +372,7 @@ fn cmd_to_line(cmd: &OverlayCmd) -> String {
     }
 }
 
+#[cfg(feature = "overlay-ui")]
 fn line_to_cmd(line: &str) -> Option<OverlayCmd> {
     let line = line.trim_end();
     let mut parts = line.splitn(2, '\t');
@@ -364,67 +388,7 @@ fn line_to_cmd(line: &str) -> Option<OverlayCmd> {
     }
 }
 
-#[allow(dead_code)]
-fn spawn_eframe_disabled() -> OverlayHandle {
-    let (tx, rx) = unbounded::<OverlayCmd>();
-    std::thread::spawn(move || {
-        let view = Arc::new(Mutex::new(View::Hidden));
-        let bars = Arc::new(Mutex::new(Vec::new()));
-        let peak = Arc::new(Mutex::new(0.05_f32));
-        let size = [420.0_f32, 68.0_f32];
-        let pos = bottom_center_of_cursor_monitor(size);
-        // DEBUG MODE: force opaque, no passthrough, no transparency, fixed
-        // position (100,100). Confirms that the window can be created at all.
-        // Once visible we can re-enable transparency/passthrough.
-        let debug_visible = std::env::var("OVERLAY_DEBUG").is_ok();
-        let mut vb = egui::ViewportBuilder::default()
-            .with_decorations(debug_visible)
-            .with_transparent(!debug_visible)
-            .with_window_level(egui::WindowLevel::AlwaysOnTop)
-            .with_mouse_passthrough(!debug_visible)
-            .with_resizable(false)
-            .with_taskbar(debug_visible)
-            .with_inner_size(if debug_visible { [600.0, 120.0] } else { size })
-            .with_position(if debug_visible {
-                egui::pos2(100.0, 100.0)
-            } else {
-                egui::pos2(pos[0], pos[1])
-            });
-        if let Some(ic) = crate::app_icon::icon_data() {
-            vb = vb.with_icon(ic);
-        }
-        log::info!(
-            "overlay: spawning at pos=({:.0},{:.0}) size={:?}",
-            pos[0], pos[1], size
-        );
-        let opts = NativeOptions { viewport: vb, ..Default::default() };
-        let app = App { rx, view, bars, peak };
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            eframe::run_native(
-                "whisper-local-overlay",
-                opts,
-                Box::new(|_cc| {
-                    log::info!("overlay: eframe creator fired");
-                    Box::new(app)
-                }),
-            )
-        }));
-        match outcome {
-            Ok(Ok(_)) => log::info!("overlay: run_native exited cleanly"),
-            Ok(Err(e)) => log::error!("overlay: run_native returned error: {e:#}"),
-            Err(panic) => {
-                let msg = panic
-                    .downcast_ref::<String>()
-                    .cloned()
-                    .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
-                    .unwrap_or_else(|| format!("{:?}", panic));
-                log::error!("overlay: run_native PANICKED: {msg}");
-            }
-        }
-    });
-    OverlayHandle(tx)
-}
-
+#[cfg(feature = "overlay-ui")]
 fn bottom_center_of_cursor_monitor(size: [f32; 2]) -> [f32; 2] {
     use windows::Win32::Foundation::POINT;
     use windows::Win32::Graphics::Gdi::*;

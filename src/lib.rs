@@ -1,11 +1,14 @@
+#[cfg(feature = "gui")]
 pub mod app_icon;
 pub mod audio;
 pub mod autostart;
 pub mod config;
+#[cfg(feature = "gui")]
 pub mod fonts;
 pub mod hotkey;
 pub mod inject;
 pub mod overlay;
+#[cfg(feature = "gui")]
 pub mod settings_ui;
 #[cfg(feature = "transcribe-file")]
 pub mod transcribe_ui;

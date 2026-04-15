@@ -5,6 +5,7 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 use tray_icon::{ClickType, TrayIconEvent};
 
 pub enum TrayEvent {
+    #[cfg(feature = "gui")]
     OpenSettings,
     Quit,
     SelectMic(String),
@@ -17,6 +18,7 @@ pub struct Tray {
     _icon: TrayIcon,
     idle: Icon,
     active: Icon,
+    #[cfg(feature = "gui")]
     settings_id: tray_icon::menu::MenuId,
     quit_id: tray_icon::menu::MenuId,
     /// Mic entries: (CheckMenuItem, mic name where "" = default). Handle kept
@@ -53,9 +55,7 @@ impl Tray {
             }
         }
 
-        menu.append(&mic_submenu)?;
-
-        // Language submenu (radio-group behavior enforced manually in try_recv).
+        // Language submenu first (radio-group behavior enforced manually in try_recv).
         let lang_submenu = Submenu::new("Language", true);
         let mut lang_items: Vec<(CheckMenuItem, String)> = Vec::new();
         for (code, label) in crate::config::LANGUAGES {
@@ -68,14 +68,17 @@ impl Tray {
             }
         }
         menu.append(&lang_submenu)?;
+        menu.append(&mic_submenu)?;
         menu.append(&PredefinedMenuItem::separator())?;
 
-        let settings_item = MenuItem::new("Settings", true, None);
+        #[cfg(feature = "gui")]
+        let settings_id = {
+            let settings_item = MenuItem::new("Settings", true, None);
+            menu.append(&settings_item)?;
+            settings_item.id().clone()
+        };
         let quit_item = MenuItem::new("Quit", true, None);
-        menu.append(&settings_item)?;
         menu.append(&quit_item)?;
-
-        let settings_id = settings_item.id().clone();
         let quit_id = quit_item.id().clone();
 
         let icon = TrayIconBuilder::new()
@@ -88,6 +91,7 @@ impl Tray {
             _icon: icon,
             idle,
             active,
+            #[cfg(feature = "gui")]
             settings_id,
             quit_id,
             mic_items,
@@ -100,9 +104,11 @@ impl Tray {
         // First check menu events.
         let menu_rx = MenuEvent::receiver();
         if let Ok(e) = menu_rx.try_recv() {
+            #[cfg(feature = "gui")]
             if e.id == self.settings_id {
                 return Some(TrayEvent::OpenSettings);
-            } else if e.id == self.quit_id {
+            }
+            if e.id == self.quit_id {
                 return Some(TrayEvent::Quit);
             }
             if let Some(idx) = self.mic_items.iter().position(|(item, _)| item.id() == &e.id) {

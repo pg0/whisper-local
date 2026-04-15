@@ -50,12 +50,16 @@ That's it. No login. No cloud account. No paid tier.
 ## Build
 
 ```bash
-cargo build --release                                                    # full
-cargo build --release --no-default-features --features transcribe-file   # min:  no speaker UI
-cargo build --release --no-default-features                              # pure: mic + tray only
+cargo build --release                          # full: ~10 MB, ~380 MB RAM (overlay child included)
+cargo build --release --no-default-features    # lite: ~3.6 MB, ~15 MB RAM, no GUI at all
 ```
 
-Three binaries land in `target/release/`. Pick the one that matches what you need; the rest stays out of your taskbar and out of your RAM.
+| build | binary | steady-state RAM | overlay | drop-window | speakers | Settings UI |
+|-------|--------|------------------|---------|-------------|----------|-------------|
+| **full** | 10 MB  | ~380 MB | yes | yes | yes | yes |
+| **lite** | 3.6 MB | ~15 MB  | —   | —   | —   | edit `config.toml` directly |
+
+Lite is the same hotkey-driven tray app, just stripped to the bone — no eframe, no wgpu, no GPU stack. If you only want push-to-talk dictation and don't need the floating recording bar or the file-drop window, lite is the one.
 
 ## Run
 

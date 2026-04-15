@@ -1,0 +1,1 @@
+{"rustc":11689572559507982127,"features":"[\"std\"]","declared_features":"[\"std\"]","target":13660428293521089546,"profile":12531685835395049461,"path":12094899147691661848,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"release\\.fingerprint\\error-code-7cc18f03e1670a6a\\dep-lib-error_code","checksum":false}}],"rustflags":[],"config":8247474407144887393,"compile_kind":0}

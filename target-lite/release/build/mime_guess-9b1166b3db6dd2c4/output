@@ -1,0 +1,1 @@
+cargo:rustc-env=MIME_TYPES_GENERATED_PATH=C:\code\vibes\whisper-local\target-lite\release\build\mime_guess-9b1166b3db6dd2c4\out\mime_types_generated.rs
