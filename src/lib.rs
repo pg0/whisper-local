@@ -2,6 +2,7 @@ pub mod app_icon;
 pub mod audio;
 pub mod autostart;
 pub mod config;
+pub mod fonts;
 pub mod hotkey;
 pub mod inject;
 pub mod overlay;

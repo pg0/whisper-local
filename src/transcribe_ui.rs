@@ -103,36 +103,13 @@ pub fn open(cfg: Config) {
         "whisper-local-transcribe-file",
         opts,
         Box::new(move |cc| {
-            install_broad_unicode_font(&cc.egui_ctx);
+            crate::fonts::install_broad_unicode_font(&cc.egui_ctx);
             Box::new(App {
                 shared: shared_for_ui,
                 cfg,
             })
         }),
     );
-}
-
-/// Load Segoe UI (+ symbol fallback) so filenames and unicode glyphs render
-/// instead of showing the missing-glyph square. Default egui fonts cover a
-/// narrow Latin subset.
-/// Prepended so Segoe UI + CJK + Hangul win the fallback chain ahead of
-/// egui's emoji fonts (which render tofu for unknown glyphs).
-fn install_broad_unicode_font(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
-    let candidates = [
-        ("segoe_ui", r"C:\Windows\Fonts\segoeui.ttf"),
-        ("ms_yahei", r"C:\Windows\Fonts\msyh.ttc"),  // CJK + Japanese kana
-        ("malgun", r"C:\Windows\Fonts\malgun.ttf"),  // Hangul
-    ];
-    for (name, path) in candidates {
-        if let Ok(bytes) = std::fs::read(path) {
-            fonts.font_data.insert(name.into(), egui::FontData::from_owned(bytes));
-            for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-                fonts.families.entry(fam).or_default().insert(0, name.into());
-            }
-        }
-    }
-    ctx.set_fonts(fonts);
 }
 
 /// Windows named-mutex guard used to enforce single-instance.

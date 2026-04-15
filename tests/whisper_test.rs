@@ -18,7 +18,7 @@ async fn health_up_then_transcribe_succeeds() {
 
     let cfg = WhisperCfg { base_url: server.uri(), ..Default::default() };
     let text = tokio::task::spawn_blocking(move || {
-        whisper_local::whisper::transcribe(&make_fake_wav(), &cfg).unwrap()
+        whisper_local::whisper::transcribe(&make_fake_wav(), "", &cfg).unwrap()
     }).await.unwrap();
     assert_eq!(text, "hello world");
 }
@@ -46,7 +46,7 @@ async fn health_down_triggers_start_then_succeeds() {
         ..Default::default()
     };
     let text = tokio::task::spawn_blocking(move || {
-        whisper_local::whisper::transcribe(&make_fake_wav(), &cfg).unwrap()
+        whisper_local::whisper::transcribe(&make_fake_wav(), "", &cfg).unwrap()
     }).await.unwrap();
     assert_eq!(text, "up");
 }

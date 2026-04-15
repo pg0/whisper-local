@@ -37,6 +37,11 @@ fn main() -> anyhow::Result<()> {
         whisper_local::transcribe_ui::open(cfg);
         return Ok(());
     }
+    if args.iter().any(|a| a == "--overlay") {
+        init_logging();
+        whisper_local::overlay::run_main_thread();
+        return Ok(());
+    }
 
     init_logging();
     let cfg = Arc::new(Mutex::new(Config::load()?));
@@ -46,7 +51,10 @@ fn main() -> anyhow::Result<()> {
     );
 
     let overlay = overlay::spawn();
-    let mut tray = Tray::new(&cfg.lock().mic_name)?;
+    let mut tray = {
+        let c = cfg.lock();
+        Tray::new(&c.mic_name, &c.language)?
+    };
 
     let (hk_tx, hk_rx) = unbounded::<HotkeyEvent>();
     spawn_hook(hk_tx)?;
@@ -150,6 +158,17 @@ fn handle_tray_event(
                 if name.is_empty() { "(default)" } else { &name }
             );
         }
+        TrayEvent::SelectLanguage(code) => {
+            let mut c = cfg.lock();
+            c.language = code.clone();
+            if let Err(e) = c.save() {
+                log::error!("save config after language change: {e}");
+            }
+            log::info!(
+                "language selected: {}",
+                if code.is_empty() { "(auto)" } else { &code }
+            );
+        }
         #[cfg(feature = "transcribe-file")]
         TrayEvent::OpenTranscribeFile => {
             let exe = std::env::current_exe()?;
@@ -246,7 +265,10 @@ fn stop_and_transcribe(
     };
     overlay.hide();
     tray.set_active(false);
-    let whisper_cfg = cfg.lock().whisper.clone();
+    let (whisper_cfg, language) = {
+        let c = cfg.lock();
+        (c.whisper.clone(), c.language.clone())
+    };
     let overlay_clone = overlay.clone();
     // Stop the stream on the current thread (cpal::Stream is !Send).
     // Then hand the WAV bytes to a background thread for the network call.
@@ -261,7 +283,7 @@ fn stop_and_transcribe(
                 log::warn!("dump last.wav: {e}");
             }
             std::thread::spawn(move || {
-                match whisper::transcribe(&wav, &whisper_cfg) {
+                match whisper::transcribe(&wav, &language, &whisper_cfg) {
                     Ok(text) if !text.is_empty() => {
                         log::info!("transcript: {}", text);
                         inject::type_text(&text);

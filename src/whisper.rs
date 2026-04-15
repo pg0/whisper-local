@@ -25,8 +25,8 @@ pub struct TranscribeResult {
     pub speaker_count: usize,
 }
 
-pub fn transcribe(wav: &[u8], cfg: &WhisperCfg) -> Result<String> {
-    transcribe_file_bytes(wav, "audio.wav", cfg.request_timeout_secs, cfg)
+pub fn transcribe(wav: &[u8], language: &str, cfg: &WhisperCfg) -> Result<String> {
+    transcribe_file_bytes(wav, "audio.wav", cfg.request_timeout_secs, language, cfg)
 }
 
 /// Transcribe arbitrary audio/video file bytes with a caller-specified filename
@@ -35,13 +35,14 @@ pub fn transcribe_file_bytes(
     bytes: &[u8],
     filename: &str,
     timeout_secs: u64,
+    language: &str,
     cfg: &WhisperCfg,
 ) -> Result<String> {
     let client = Client::builder()
         .timeout(Duration::from_secs(timeout_secs.max(30)))
         .build()?;
     ensure_up(&client, cfg).context("whisper unreachable")?;
-    let form = multipart::Form::new()
+    let mut form = multipart::Form::new()
         .part(
             "file",
             multipart::Part::bytes(bytes.to_vec())
@@ -50,6 +51,9 @@ pub fn transcribe_file_bytes(
         )
         .text("model", cfg.model_param.clone())
         .text("response_format", cfg.response_format.clone());
+    if !language.is_empty() {
+        form = form.text("language", language.to_string());
+    }
     let resp = client
         .post(cfg.transcribe_url())
         .multipart(form)

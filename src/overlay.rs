@@ -132,9 +132,9 @@ impl eframe::App for App {
             };
             egui::Frame::none()
                 .fill(bg)
-                .rounding(16.0)
+                .rounding(12.0)
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 24)))
-                .inner_margin(egui::Margin::symmetric(14.0, 10.0))
+                .inner_margin(egui::Margin::symmetric(10.0, 6.0))
         };
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
@@ -143,35 +143,22 @@ impl eframe::App for App {
                 View::Recording { latched, ready, .. } => {
                     ui.horizontal_centered(|ui| {
                         let t = ui.input(|i| i.time) as f32;
-                        if !ready {
-                            // Mic warming up — amber pulse, no waveform yet.
-                            let pulse = 0.55 + 0.45 * (t * 5.0).sin().abs();
-                            let dot_color = egui::Color32::from_rgba_unmultiplied(
-                                240, 180, 40, (255.0 * pulse) as u8,
-                            );
-                            ui.colored_label(dot_color, egui::RichText::new("●").size(18.0));
-                            ui.label(
-                                egui::RichText::new("Starting mic…")
-                                    .color(egui::Color32::from_rgb(230, 220, 180))
-                                    .size(13.0),
-                            );
+                        let (dot_rgb, label, freq) = if !ready {
+                            ((240, 180, 40), "Starting mic…", 5.0)
+                        } else if latched {
+                            ((255, 70, 70), "Listening (latched)", 6.0)
                         } else {
-                            let pulse = 0.6 + 0.4 * (t * 6.0).sin().abs();
-                            let dot_color = egui::Color32::from_rgba_unmultiplied(
-                                255, 70, 70, (255.0 * pulse) as u8,
-                            );
-                            ui.colored_label(dot_color, egui::RichText::new("●").size(18.0));
-                            let label = if latched {
-                                "Listening (latched) — tap to stop"
-                            } else {
-                                "Recording…"
-                            };
-                            ui.label(
-                                egui::RichText::new(label)
-                                    .color(egui::Color32::from_rgb(230, 230, 235))
-                                    .size(13.0),
-                            );
-                            ui.add_space(10.0);
+                            ((255, 70, 70), "Recording…", 6.0)
+                        };
+                        let pulse = 0.6 + 0.4 * (t * freq).sin().abs();
+                        draw_dot(ui, dot_rgb, pulse, 4.0);
+                        ui.label(
+                            egui::RichText::new(label)
+                                .color(egui::Color32::from_rgb(230, 230, 235))
+                                .size(11.0),
+                        );
+                        if ready {
+                            ui.add_space(6.0);
                             let bars = self.bars.lock().clone();
                             let peak = *self.peak.lock();
                             draw_bars(ui, &bars, peak);
@@ -180,10 +167,11 @@ impl eframe::App for App {
                 }
                 View::Error { msg, .. } => {
                     ui.horizontal_centered(|ui| {
+                        draw_dot(ui, (240, 80, 80), 1.0, 4.0);
                         ui.label(
-                            egui::RichText::new(format!("⚠  {msg}"))
+                            egui::RichText::new(msg)
                                 .color(egui::Color32::WHITE)
-                                .size(13.0),
+                                .size(11.0),
                         );
                     });
                 }
@@ -192,9 +180,18 @@ impl eframe::App for App {
     }
 }
 
+fn draw_dot(ui: &mut egui::Ui, rgb: (u8, u8, u8), alpha: f32, radius: f32) {
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(radius * 2.0 + 2.0, radius * 2.0 + 2.0), egui::Sense::hover());
+    let a = (alpha.clamp(0.0, 1.0) * 255.0) as u8;
+    let color = egui::Color32::from_rgba_unmultiplied(rgb.0, rgb.1, rgb.2, a);
+    ui.painter_at(rect).circle_filled(rect.center(), radius, color);
+}
+
 fn draw_bars(ui: &mut egui::Ui, bars: &[f32], peak: f32) {
-    const BAR_COUNT: usize = 48;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(200.0, 34.0), egui::Sense::hover());
+    const BAR_COUNT: usize = 36;
+    let avail = ui.available_width().min(140.0).max(60.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(avail, 22.0), egui::Sense::hover());
     let painter = ui.painter_at(rect);
     let max_h = rect.height();
     let slot_w = rect.width() / BAR_COUNT as f32;
@@ -226,16 +223,145 @@ fn draw_bars(ui: &mut egui::Ui, bars: &[f32], peak: f32) {
     }
 }
 
-/// Disabled: eframe panics when run from a worker thread on Windows. The
-/// floating recording bar will return as a child-process window in a follow-up.
-/// For now the tray icon swap (idle/active) is the recording indicator.
+/// Spawn the overlay as a CHILD PROCESS (`whisper-local.exe --overlay`).
+/// eframe/winit panics when its window is created from a worker thread on
+/// Windows; running the overlay in its own process gives it a real main
+/// thread. Parent → child commands travel as text lines on stdin.
 pub fn spawn() -> OverlayHandle {
     let (tx, rx) = unbounded::<OverlayCmd>();
-    // Drain commands so senders never block; do nothing with them.
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            log::error!("overlay: current_exe failed: {e}");
+            std::thread::spawn(move || while rx.recv().is_ok() {});
+            return OverlayHandle(tx);
+        }
+    };
+    let mut child = match std::process::Command::new(&exe)
+        .arg("--overlay")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("overlay: failed to spawn child: {e}");
+            std::thread::spawn(move || while rx.recv().is_ok() {});
+            return OverlayHandle(tx);
+        }
+    };
+    log::info!("overlay: child pid={}", child.id());
+    let mut stdin = child.stdin.take().expect("child stdin piped");
     std::thread::spawn(move || {
-        while rx.recv().is_ok() {}
+        use std::io::Write;
+        while let Ok(cmd) = rx.recv() {
+            let line = cmd_to_line(&cmd);
+            if stdin.write_all(line.as_bytes()).is_err() {
+                log::warn!("overlay: child stdin closed");
+                break;
+            }
+            let _ = stdin.flush();
+            if matches!(cmd, OverlayCmd::Quit) {
+                break;
+            }
+        }
+        let _ = child.wait();
     });
     OverlayHandle(tx)
+}
+
+/// Run the overlay viewport on the *current* (main) thread of the child
+/// process. Called by `whisper-local.exe --overlay`. Reads command lines
+/// from stdin and forwards them to the eframe App.
+pub fn run_main_thread() {
+    let (tx, rx) = unbounded::<OverlayCmd>();
+    let stdin_tx = tx.clone();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        let stdin = std::io::stdin();
+        let mut buf = String::new();
+        loop {
+            buf.clear();
+            match stdin.lock().read_line(&mut buf) {
+                Ok(0) => {
+                    let _ = stdin_tx.send(OverlayCmd::Quit);
+                    break;
+                }
+                Ok(_) => {
+                    if let Some(cmd) = line_to_cmd(&buf) {
+                        if stdin_tx.send(cmd).is_err() {
+                            break;
+                        }
+                    }
+                }
+                Err(_) => {
+                    let _ = stdin_tx.send(OverlayCmd::Quit);
+                    break;
+                }
+            }
+        }
+    });
+    drop(tx);
+
+    let view = Arc::new(Mutex::new(View::Hidden));
+    let bars = Arc::new(Mutex::new(Vec::new()));
+    let peak = Arc::new(Mutex::new(0.05_f32));
+    let size = [280.0_f32, 44.0_f32];
+    let pos = bottom_center_of_cursor_monitor(size);
+    log::info!("overlay child: pos=({:.0},{:.0})", pos[0], pos[1]);
+    let mut vb = egui::ViewportBuilder::default()
+        .with_decorations(false)
+        .with_transparent(true)
+        .with_window_level(egui::WindowLevel::AlwaysOnTop)
+        .with_mouse_passthrough(true)
+        .with_resizable(false)
+        .with_taskbar(false)
+        .with_inner_size(size)
+        .with_position(egui::pos2(pos[0], pos[1]));
+    if let Some(ic) = crate::app_icon::icon_data() {
+        vb = vb.with_icon(ic);
+    }
+    let opts = NativeOptions { viewport: vb, ..Default::default() };
+    let app = App { rx, view, bars, peak };
+    let result = eframe::run_native(
+        "whisper-local-overlay",
+        opts,
+        Box::new(|cc| {
+            crate::fonts::install_broad_unicode_font(&cc.egui_ctx);
+            log::info!("overlay child: first frame");
+            Box::new(app)
+        }),
+    );
+    if let Err(e) = result {
+        log::error!("overlay child: run_native error: {e:#}");
+    }
+}
+
+fn cmd_to_line(cmd: &OverlayCmd) -> String {
+    match cmd {
+        OverlayCmd::ShowRecording => "REC\n".into(),
+        OverlayCmd::ShowLatched => "LAT\n".into(),
+        OverlayCmd::ShowError(m) => format!("ERR\t{}\n", m.replace('\n', " ")),
+        OverlayCmd::PushRms(r) => format!("RMS\t{r}\n"),
+        OverlayCmd::Hide => "HID\n".into(),
+        OverlayCmd::Quit => "QUI\n".into(),
+    }
+}
+
+fn line_to_cmd(line: &str) -> Option<OverlayCmd> {
+    let line = line.trim_end();
+    let mut parts = line.splitn(2, '\t');
+    let tag = parts.next()?;
+    match tag {
+        "REC" => Some(OverlayCmd::ShowRecording),
+        "LAT" => Some(OverlayCmd::ShowLatched),
+        "HID" => Some(OverlayCmd::Hide),
+        "QUI" => Some(OverlayCmd::Quit),
+        "ERR" => Some(OverlayCmd::ShowError(parts.next().unwrap_or("").to_string())),
+        "RMS" => parts.next().and_then(|s| s.parse().ok()).map(OverlayCmd::PushRms),
+        _ => None,
+    }
 }
 
 #[allow(dead_code)]

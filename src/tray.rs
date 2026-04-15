@@ -8,6 +8,7 @@ pub enum TrayEvent {
     OpenSettings,
     Quit,
     SelectMic(String),
+    SelectLanguage(String),
     #[cfg(feature = "transcribe-file")]
     OpenTranscribeFile,
 }
@@ -18,13 +19,15 @@ pub struct Tray {
     active: Icon,
     settings_id: tray_icon::menu::MenuId,
     quit_id: tray_icon::menu::MenuId,
-    /// Mic entries: (CheckMenuItem handle, mic name where "" = default).
-    /// The handle is kept so we can toggle checks to simulate radio-group behavior.
+    /// Mic entries: (CheckMenuItem, mic name where "" = default). Handle kept
+    /// so we can toggle checks to simulate radio-group behavior.
     mic_items: Vec<(CheckMenuItem, String)>,
+    /// Language entries: (CheckMenuItem, ISO code where "" = auto).
+    lang_items: Vec<(CheckMenuItem, String)>,
 }
 
 impl Tray {
-    pub fn new(current_mic: &str) -> anyhow::Result<Self> {
+    pub fn new(current_mic: &str, current_language: &str) -> anyhow::Result<Self> {
         let idle = load_icon(include_bytes!("../assets/tray_idle.png"))?;
         let active = load_icon(include_bytes!("../assets/tray_active.png"))?;
 
@@ -51,6 +54,20 @@ impl Tray {
         }
 
         menu.append(&mic_submenu)?;
+
+        // Language submenu (radio-group behavior enforced manually in try_recv).
+        let lang_submenu = Submenu::new("Language", true);
+        let mut lang_items: Vec<(CheckMenuItem, String)> = Vec::new();
+        for (code, label) in crate::config::LANGUAGES {
+            let checked = *code == current_language;
+            let item = CheckMenuItem::new(*label, true, checked, None);
+            lang_submenu.append(&item)?;
+            lang_items.push((item, (*code).to_string()));
+            if code.is_empty() {
+                lang_submenu.append(&PredefinedMenuItem::separator())?;
+            }
+        }
+        menu.append(&lang_submenu)?;
         menu.append(&PredefinedMenuItem::separator())?;
 
         let settings_item = MenuItem::new("Settings", true, None);
@@ -74,6 +91,7 @@ impl Tray {
             settings_id,
             quit_id,
             mic_items,
+            lang_items,
         })
     }
 
@@ -87,12 +105,17 @@ impl Tray {
             } else if e.id == self.quit_id {
                 return Some(TrayEvent::Quit);
             }
-            let selected = self.mic_items.iter().position(|(item, _)| item.id() == &e.id);
-            if let Some(idx) = selected {
+            if let Some(idx) = self.mic_items.iter().position(|(item, _)| item.id() == &e.id) {
                 for (i, (item, _)) in self.mic_items.iter().enumerate() {
                     item.set_checked(i == idx);
                 }
                 return Some(TrayEvent::SelectMic(self.mic_items[idx].1.clone()));
+            }
+            if let Some(idx) = self.lang_items.iter().position(|(item, _)| item.id() == &e.id) {
+                for (i, (item, _)) in self.lang_items.iter().enumerate() {
+                    item.set_checked(i == idx);
+                }
+                return Some(TrayEvent::SelectLanguage(self.lang_items[idx].1.clone()));
             }
         }
         // Then check icon-click events: left double-click opens file transcribe
