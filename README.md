@@ -21,6 +21,7 @@ whisper-local goes the other way:
 - **Your audio never leaves your machine.** It's a localhost POST to a Whisper server you started.
 - **No telemetry. No accounts. No rate limits. No subscription.**
 - **No screen capture. No clipboard sniffing. No background context-gathering.** It records when you hold the hotkey and shuts up when you release it.
+- **Tiny footprint.** A single ~10 MB tray binary. Mainstream cloud dictation tools ship as 500+ MB Electron apps that idle in the background; whisper-local is one process with one job.
 - **You own the model.** Swap `faster-whisper-large-v3-turbo` for any OpenAI-compatible Whisper server you trust.
 
 If your machine is offline, it still works — as long as your Whisper server is reachable on `localhost`.
