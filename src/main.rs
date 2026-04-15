@@ -2,6 +2,7 @@
 
 use crossbeam_channel::{unbounded, RecvTimeoutError};
 use parking_lot::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -21,6 +22,8 @@ enum AppMsg {
     Hotkey(HotkeyEvent),
     Tray(TrayEvent),
     ReloadConfig,
+    /// Continuous hands-free: transcript has been typed, restart recording.
+    RestartContinuous,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -78,6 +81,9 @@ fn main() -> anyhow::Result<()> {
 
     // Current recording slot.
     let recording: Arc<Mutex<Option<AudioCapture>>> = Arc::new(Mutex::new(None));
+    // Set by the watcher when auto-stop fires so the main loop knows this
+    // StopAndTranscribe came from silence detection (not a user chord press).
+    let auto_stop_pending = Arc::new(AtomicBool::new(false));
 
     loop {
         // Pump Win32 messages so tray-icon clicks/menu events dispatch.
@@ -91,20 +97,48 @@ fn main() -> anyhow::Result<()> {
         // Block for up to 100ms on the app channel (so we keep pumping tray).
         match app_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(AppMsg::Hotkey(ev)) => match ev {
-                HotkeyEvent::StartRecording => {
-                    start_capture(&cfg, &recording, &overlay, false, &mut tray, &app_tx)
-                }
-                HotkeyEvent::StartLatched => {
-                    start_capture(&cfg, &recording, &overlay, true, &mut tray, &app_tx)
-                }
+                HotkeyEvent::StartRecording => start_capture(
+                    &cfg,
+                    &recording,
+                    &overlay,
+                    false,
+                    &mut tray,
+                    &app_tx,
+                    &auto_stop_pending,
+                ),
+                HotkeyEvent::StartLatched => start_capture(
+                    &cfg,
+                    &recording,
+                    &overlay,
+                    true,
+                    &mut tray,
+                    &app_tx,
+                    &auto_stop_pending,
+                ),
                 HotkeyEvent::StopAndTranscribe => {
-                    stop_and_transcribe(&cfg, &recording, &overlay, &mut tray)
+                    let was_auto = auto_stop_pending.swap(false, Ordering::SeqCst);
+                    stop_and_transcribe(
+                        &cfg, &recording, &overlay, &mut tray, &app_tx, was_auto,
+                    )
                 }
                 HotkeyEvent::DiscardRecording => discard(&recording, &overlay, &mut tray),
                 HotkeyEvent::MaybeDoubleTapExpired => {}
             },
             Ok(AppMsg::Tray(ev)) => {
                 handle_tray_event(ev, &overlay, &cfg, &app_tx)?;
+            }
+            Ok(AppMsg::RestartContinuous) => {
+                log::info!("continuous: restarting recording after transcript");
+                start_capture(
+                    &cfg,
+                    &recording,
+                    &overlay,
+                    true, // immediately latched — we're mid-loop
+                    &mut tray,
+                    &app_tx,
+                    &auto_stop_pending,
+                );
+                force_latch();
             }
             Ok(AppMsg::ReloadConfig) => {
                 *cfg.lock() = Config::load().unwrap_or_else(|e| {
@@ -218,6 +252,7 @@ fn start_capture(
     latched: bool,
     tray: &mut Tray,
     app_tx: &crossbeam_channel::Sender<AppMsg>,
+    auto_stop_pending: &Arc<AtomicBool>,
 ) {
     let mic = cfg.lock().mic_name.clone();
     log::info!(
@@ -230,10 +265,11 @@ fn start_capture(
             let ov_tx = overlay.0.clone();
             let overlay_hf = overlay.clone();
             let app_tx_hf = app_tx.clone();
-            let (hf_enabled, hold_secs, silence_secs, silence_thresh) = {
+            let auto_stop_pending_w = auto_stop_pending.clone();
+            let (as_enabled, hold_secs, silence_secs, silence_thresh) = {
                 let c = cfg.lock();
                 (
-                    c.hands_free,
+                    c.auto_stop,
                     c.auto_latch_hold_secs,
                     c.auto_stop_silence_secs,
                     c.silence_rms_threshold,
@@ -252,7 +288,7 @@ fn start_capture(
                     if r > max_rms { max_rms = r; }
                     sum_rms += r;
                     let _ = ov_tx.send(OverlayCmd::PushRms(r));
-                    if hf_enabled && !auto_stopped {
+                    if as_enabled && !auto_stopped {
                         let now = std::time::Instant::now();
                         if !auto_latched
                             && now.duration_since(start).as_secs_f32() >= hold_secs
@@ -260,7 +296,7 @@ fn start_capture(
                             auto_latched = true;
                             force_latch();
                             overlay_hf.show_latched();
-                            log::info!("hands-free: auto-latched after {hold_secs}s");
+                            log::info!("auto-stop: auto-latched after {hold_secs}s");
                         }
                         if r >= silence_thresh {
                             last_loud = now;
@@ -269,9 +305,10 @@ fn start_capture(
                         {
                             auto_stopped = true;
                             log::info!(
-                                "hands-free: auto-stop after {silence_secs}s silence"
+                                "auto-stop: fired after {silence_secs}s silence"
                             );
                             force_idle();
+                            auto_stop_pending_w.store(true, Ordering::SeqCst);
                             let _ = app_tx_hf
                                 .send(AppMsg::Hotkey(HotkeyEvent::StopAndTranscribe));
                         }
@@ -303,6 +340,8 @@ fn stop_and_transcribe(
     slot: &Arc<Mutex<Option<AudioCapture>>>,
     overlay: &OverlayHandle,
     tray: &mut Tray,
+    app_tx: &crossbeam_channel::Sender<AppMsg>,
+    was_auto: bool,
 ) {
     let cap = slot.lock().take();
     let Some(cap) = cap else {
@@ -310,11 +349,12 @@ fn stop_and_transcribe(
     };
     overlay.hide();
     tray.set_active(false);
-    let (whisper_cfg, language) = {
+    let (whisper_cfg, language, continuous) = {
         let c = cfg.lock();
-        (c.whisper.clone(), c.language.clone())
+        (c.whisper.clone(), c.language.clone(), c.continuous)
     };
     let overlay_clone = overlay.clone();
+    let app_tx_t = app_tx.clone();
     // Stop the stream on the current thread (cpal::Stream is !Send).
     // Then hand the WAV bytes to a background thread for the network call.
     match cap.stop() {
@@ -338,6 +378,9 @@ fn stop_and_transcribe(
                         log::error!("whisper: {e}");
                         overlay_clone.show_error(short_err(&e));
                     }
+                }
+                if was_auto && continuous {
+                    let _ = app_tx_t.send(AppMsg::RestartContinuous);
                 }
             });
         }

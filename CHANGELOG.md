@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 20260415 (v0.1.2)
+- **Files changed:** `Cargo.toml`, `src/config.rs`, `src/settings_ui.rs`, `src/main.rs`, `README.md`
+- **What changed:** Honest naming + real continuous hands-free. Renamed config `hands_free` → `auto_stop` (one-shot: auto-latch on hold + stop on silence). Added new `continuous` flag + checkbox "Loop (continuous hands-free, restart after each transcript)". New `AppMsg::RestartContinuous` + `auto_stop_pending` AtomicBool differentiate silence-triggered stop from user chord-stop. Transcribe background thread sends `RestartContinuous` when `was_auto && cfg.continuous`; main handler starts fresh capture in latched state and force_latches the state machine. Press `Ctrl+Win` once to break the loop (chord-stop clears auto_stop_pending, transcript types, no restart). README block split into "Auto-stop" (one-shot) vs "Loop (continuous hands-free)".
+
 ## 20260415 (v0.1.1)
 - **Files changed:** `Cargo.toml`, `Cargo.lock`
 - **What changed:** Version bump 0.1.0 → 0.1.1 for the hands-free release.

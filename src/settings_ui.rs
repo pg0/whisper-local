@@ -132,18 +132,30 @@ impl eframe::App for SettingsApp {
             }
 
             ui.add_space(8.0);
-            let mut hf = st.cfg.hands_free;
+            let mut auto_stop = st.cfg.auto_stop;
             if ui
-                .checkbox(&mut hf, "Hands-free (auto-latch on hold, auto-stop on silence)")
+                .checkbox(&mut auto_stop, "Auto-stop (auto-latch on hold, stop after silence)")
                 .on_hover_text(
                     "While holding the chord, auto-latch after the hold-seconds so you can \
                      release. Recording auto-stops after N seconds of silence.",
                 )
                 .changed()
             {
-                st.cfg.hands_free = hf;
+                st.cfg.auto_stop = auto_stop;
             }
-            ui.add_enabled_ui(st.cfg.hands_free, |ui| {
+            let mut cont = st.cfg.continuous;
+            if ui
+                .checkbox(&mut cont, "Loop (continuous hands-free, restart after each transcript)")
+                .on_hover_text(
+                    "After the transcript is typed, recording restarts automatically in \
+                     latched state. Press Ctrl+Win to break out of the loop. \
+                     Needs Auto-stop on to detect when an utterance ends.",
+                )
+                .changed()
+            {
+                st.cfg.continuous = cont;
+            }
+            ui.add_enabled_ui(st.cfg.auto_stop, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Auto-latch after holding");
                     ui.add(

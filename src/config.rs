@@ -11,13 +11,17 @@ pub struct Config {
     pub enable_speaker_detection: bool,
     /// ISO code forwarded as `language` form field. Empty = auto-detect.
     pub language: String,
-    /// Hands-free: auto-latch after holding the chord for N secs, then auto-stop
+    /// Auto-stop: auto-latch after holding the chord for N secs, then auto-stop
     /// after M secs of silence.
-    pub hands_free: bool,
+    pub auto_stop: bool,
     pub auto_latch_hold_secs: f32,
     pub auto_stop_silence_secs: f32,
     /// RMS below this counts as silence for auto-stop.
     pub silence_rms_threshold: f32,
+    /// Continuous hands-free: after auto-stop types the transcript, restart
+    /// recording automatically. Loop until user presses the chord to stop.
+    /// Requires `auto_stop` to be on.
+    pub continuous: bool,
 }
 
 impl Default for Config {
@@ -27,10 +31,11 @@ impl Default for Config {
             whisper: WhisperCfg::default(),
             enable_speaker_detection: false,
             language: String::new(),
-            hands_free: false,
+            auto_stop: false,
             auto_latch_hold_secs: 2.0,
             auto_stop_silence_secs: 5.0,
             silence_rms_threshold: 0.01,
+            continuous: false,
         }
     }
 }
