@@ -1,6 +1,7 @@
 /target
 /target-min
 /target-pure
+/target-lite
 /Cargo.lock.bak
 *.rs.bk
 .vscode/

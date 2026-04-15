@@ -51,15 +51,15 @@ That's it. No login. No cloud account. No paid tier.
 
 ```bash
 cargo build --release                          # full: ~10 MB, ~380 MB RAM (overlay child included)
-cargo build --release --no-default-features    # lite: ~3.6 MB, ~15 MB RAM, no GUI at all
+cargo build --release --no-default-features    # min:  ~3.6 MB, ~15 MB RAM, no GUI at all
 ```
 
 | build | binary | steady-state RAM | overlay | drop-window | speakers | Settings UI |
 |-------|--------|------------------|---------|-------------|----------|-------------|
 | **full** | 10 MB  | ~380 MB | yes | yes | yes | yes |
-| **lite** | 3.6 MB | ~15 MB  | —   | —   | —   | edit `config.toml` directly |
+| **min**  | 3.6 MB | ~15 MB  | —   | —   | —   | edit `config.toml` directly |
 
-Lite is the same hotkey-driven tray app, just stripped to the bone — no eframe, no wgpu, no GPU stack. If you only want push-to-talk dictation and don't need the floating recording bar or the file-drop window, lite is the one.
+Min is the same hotkey-driven tray app, just stripped to the bone — no eframe, no wgpu, no GPU stack. If you only want push-to-talk dictation and don't need the floating recording bar or the file-drop window, min is the one.
 
 ## Run
 
