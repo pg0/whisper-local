@@ -37,3 +37,18 @@
 ## 20260414 (final)
 - **Files changed:** `README.md`
 - **What changed:** v0.1 release — added user-facing README covering hotkey behavior, build, run, config, and log paths. Why: document basic usage so a user can run the binary without the spec/plan.
+
+## 20260415
+- **Files changed:** `Cargo.toml`, `src/lib.rs`, `src/main.rs`, `src/overlay.rs`, `src/settings_ui.rs`, `src/transcribe_ui.rs`, `src/tray.rs`, `src/whisper.rs`, `src/config.rs`, `src/fonts.rs`, `tests/whisper_test.rs`, `README.md`, `.gitignore`
+- **What changed:** Major polish + structural changes for v0.1.0 public release:
+  - **Renamed** project `wispr-local` → `whisper-local` everywhere (Cargo package + lib + bin name, AppData dir, autostart registry value `WhisperLocal`, env var `WHISPER_DEBUG`, tray tooltip, window titles, single-instance mutex). Reason: avoid the WISPR FLOW trademark zone (USPTO 99560508).
+  - **Cargo features** — `gui` (eframe + egui + rfd, optional deps), `overlay-ui`, `transcribe-file`, `speaker-detection`. Default = all. `--no-default-features --features transcribe-file` produces the **min** build (no overlay child); `--no-default-features` would produce a tray-only "lite" but is not currently shipped.
+  - **Speaker-detection** — new `SpeakerMode` enum (Off / AutoMin / Exact / GenderOnly mapped to whisper API form fields `diarize`, `min_speakers`, `num_speakers`, `pitch=true`). Per-speaker copy + save UI in transcribe-file window.
+  - **Language picker** — added shared `config::LANGUAGES` const (13 entries native-script + ISO code), Settings dropdown, transcribe-file window combo, **and** a tray right-click "Language" submenu (radio-group). `whisper::transcribe` and `whisper::transcribe_file_verbose` now both accept a language param sent as the `language` form field.
+  - **CJK / Cyrillic / Hangul** rendering via shared `fonts::install_broad_unicode_font` (Segoe UI + Microsoft YaHei + Malgun, prepended to egui's font fallback chain) used by both transcribe-file and overlay windows.
+  - **Overlay** — moved from worker-thread spawn (panicked on Windows) to a child process (`whisper-local.exe --overlay`) with stdin text-line protocol (REC / LAT / RMS\t<f> / ERR\t<msg> / HID / QUI). Shrunk from 420×68 to 280×44; recording dot is painter-drawn (no font glyph dependency); uses wgpu (glow tested but does not paint visible windows on this Windows config — see `~/.claude/lessons_learned_coding.md`).
+  - **Tray** — Microphone submenu reordered below Language. New `TrayEvent::SelectLanguage(String)` wired to live config save.
+  - **Repo housekeeping** — full git-history nuke + single-commit re-init twice (once for trademark cleanup, once for clean release). `docs/superpowers/` removed and added to .gitignore. Repo at `pg0/whisper-local`, public.
+  - **README** — full rewrite in OpenHarness-style polished form: centered title + tagline, badge rows, 5-column feature table, "Why local-first" pitch, Quick start, Build matrix, Requirements, Config, Log, License.
+  - **v0.1.0 GitHub release** tagged + published with `whisper-local.exe` (full) and `whisper-local.min.exe` attached.
+- **Why:** turn the working prototype into something publishable: legally-safe name, polished landing page, two clearly-documented build flavours, honest list of known gaps (no live word-by-word streaming, no vocabulary presets, overlay 360 MB on wgpu).
