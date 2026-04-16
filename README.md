@@ -25,21 +25,66 @@
 </p>
 
 ```
-Ctrl+Win  hold to record    →  release, transcript types into the focused app
-Ctrl+Win  double-tap        →  latched mode; tap again to stop
-double-click tray icon      →  drag-and-drop file transcriber
-right-click tray icon       →  microphone, language, settings
+Ctrl+Win  hold to record       →  release, transcript types into the focused app
+Ctrl+Win  double-tap           →  latched mode; tap again to stop
+left-click tray icon           →  toggle listen mode (command-mode loop)
+double-click tray icon         →  drag-and-drop file transcriber
+right-click tray icon          →  microphone, language, replace maps, settings
 ```
 
-Three opt-in checkboxes in Settings:
->
-> **Auto-hold after** `[2.0 s]` — Hold `Ctrl+Win` this long → app keeps recording. Tap `Ctrl+Win` stops.
->
-> **Continuous typing** — Keep listening. On every short pause (~0.6 s, fixed), the chunk gets typed and recording restarts. Silent chunks are skipped (no wasted Whisper calls). `Ctrl+Win` stops.
->
-> **Stop on silence (one-shot)** — After `[5.0 s]` of silence (editable) recording ends and the transcript is typed.
->
-> Shared: silence threshold `[0.01]` — mic RMS below this counts as silence.
+### Recording modes *(checkboxes in Settings + tray)*
+
+| mode | behaviour |
+|---|---|
+| **Auto-hold after** `[2.0 s]` | Hold `Ctrl+Win` this long → app keeps recording on its own. Tap `Ctrl+Win` again to stop. |
+| **Continuous typing** | Silence-segmented loop. After every ~0.6 s pause the chunk is typed, mic restarts automatically. Silent chunks are skipped. `Ctrl+Win` exits the loop. |
+| **Stop on silence** | One-shot. After `[5.0 s]` of silence (editable) recording ends and the transcript is typed. |
+| **Drop non-commands** | Command mode. Only transcripts that match a replace-map rule fire an action; everything else is dropped. |
+| **NewLine** | Press Enter after every transcript. Toggle in tray or Settings. |
+| **Listen mode** (left-click tray) | Turns Continuous typing + Drop non-commands on together and latches the mic. Click again to stop. Pressing `Ctrl+Win` mid-listen pauses it for one dictation and restores it afterwards. |
+
+Shared silence threshold `[0.01]` (mic RMS below counts as silence).
+
+### Replace maps
+
+Voice-triggered actions live in `%APPDATA%\whisper-local\replace_maps\*.txt`.
+Each line is `trigger:replacement`. `#` starts a comment. Triggers match the
+whole chunk case-insensitive; trailing `.!?,;:` is stripped.
+
+| value prefix | effect |
+|---|---|
+| *(none)* | type the value as text (supports `\n`, `\t`, `\\` escapes) |
+| `!cmd args` | run shell command via `cmd /c` |
+| `>>https://url` | POST current selection, replace it with the response body |
+| `>>local:NAME` | apply built-in transform to selection: `lower`, `upper`, `trim`, `reverse`, `md5`, `sha256` |
+| `^chord[,chord ...]` | send key sequence (`ctrl+a`, `home,shift+end,delete`, …) |
+| `/pattern/flags` | regex trigger (`i`, `m`, `s`, `x`). Whole-chunk match (`/^...$/`) expands captures into the value, then treats it as an action — enabling parameterised commands. |
+
+Five maps ship as templates and can be toggled per-domain in the tray:
+**global · launch · programming · medical · legal**.
+
+Built-in voice commands press Enter without needing a rule:
+`new line`, `newline`, `enter`, `return`, `neue zeile`, `zeilenumbruch`, `absatz`.
+
+Examples:
+
+```
+my email:email@example.com
+my signature:--\nName\nemail@example.com
+
+/\bclode\b/i:Claude
+/^google for (.+)$/i:!start "" "https://www.google.com/search?q=$1"
+
+open browser:!start chrome
+open settings:^win+i
+
+lowercase selected:>>local:lower
+md5 selected:>>local:md5
+fix grammar:>>https://api.example.com/grammar
+```
+
+Full reference: [SYNTAX-README.md](SYNTAX-README.md).
+The Settings window also has **Command Syntax** and **Regex Syntax** tabs.
 
 ---
 

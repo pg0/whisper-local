@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 20260416 (v0.2.0)
+- **Files changed:** `Cargo.toml`, `src/config.rs`, `src/main.rs`, `src/tray.rs`, `src/overlay.rs`, `src/inject.rs`, `src/postprocess.rs`, `src/settings_ui.rs`, `src/lib.rs`, `README.md`, `SYNTAX-README.md` (new), `templates/replace_maps/*.txt` (new), `templates/syntax/*.txt` (new)
+- **What changed:**
+  - Replace maps restructured into `%APPDATA%\whisper-local\replace_maps\*.txt`. Five domain templates ship with the binary: global, launch, programming, medical, legal. Tray submenu lets the user toggle each.
+  - Value prefixes: `!cmd` shell, `>>url` rewrite-selection via HTTP POST, `>>local:lower|upper|trim|reverse|md5|sha256` selection transforms, `^chord[,chord ...]` key sequences (modifiers + key, comma-sequenced), `/pattern/flags` regex with JS-style flags, `\n`/`\t`/`\\` escape sequences in values.
+  - Whole-chunk regex matches expand captures (`$1`, `$2` …) into the value and treat the result as an action — enables parameterised commands like `/^google for (.+)$/i:!start "" "https://..."`.
+  - Built-in voice commands press Enter (`new line`, `newline`, `enter`, `return`, `neue zeile`, `zeilenumbruch`, `absatz`).
+  - Trailing sentence punctuation stripped from chunk before matching so regex captures don't grab Whisper's chunk-final period.
+  - **Continuous typing** (Loop) — hardcoded 0.6 s silence window, silent chunks skipped (content-gate), capture restarts before the Whisper round-trip.
+  - **Stop on silence** — editable silence duration for one-shot stop.
+  - **Drop non-commands** — command mode, drops any chunk that doesn't match a rule.
+  - **Listen mode** — left-click the tray icon to turn Continuous + Drop non-commands on together with mic latched. Ctrl+Win mid-listen pauses it for one dictation and restores after.
+  - **NewLine** toggle (tray + Settings) — press Enter after every transcript.
+  - URL-launch commands (`start "" "https://..."`) now go through `webbrowser::open` instead of cmd.exe to avoid quote mangling.
+  - Shell commands use `raw_arg` so cmd.exe sees the line verbatim.
+  - Parent process attached to a Win32 Job Object with `KILL_ON_JOB_CLOSE` so overlay/settings/transcribe children die when the tray exits.
+  - Overlay: dropped the "Recording…" / "Listening (latched)" / "Starting mic…" labels; window shrunk 280×44 → 200×38; dot + wave colors blend toward green for ~0.6 s when a rule fires.
+  - Settings window: tabs **General**, **Command Syntax**, **Regex Syntax** (last two render monospace at 10.5 pt). Version shown at the bottom. `SYNTAX-README.md` in the repo root is the canonical source.
+  - Debug WAVs (`debug/<ts>.wav`) only written when `WHISPER_DEBUG=1`.
+  - Perf: `ReplaceMap` cached across transcripts with `(filename, mtime)` signature invalidation; no more re-parse + regex-recompile per chunk. `process` deduplicated to a 1-liner wrapper around `process_strict`.
+
 ## 20260415 (v0.1.4)
 - **Files changed:** `Cargo.toml`, `src/config.rs`, `src/settings_ui.rs`, `src/main.rs`, `src/inject.rs`, `src/postprocess.rs` (new), `src/lib.rs`, `src/tray.rs`, `README.md`
 - **What changed:** Continuous typing finalised + post-processing layer.
