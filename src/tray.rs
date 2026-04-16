@@ -227,6 +227,10 @@ impl Tray {
         self.command_mode_item.set_checked(enabled);
     }
 
+    pub fn set_command_mode_locked(&mut self, locked: bool) {
+        self.command_mode_item.set_enabled(!locked);
+    }
+
     pub fn set_replace_maps_enabled(&mut self, enabled: bool) {
         self.replace_maps_enabled_item.set_checked(enabled);
     }

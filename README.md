@@ -54,14 +54,20 @@ whole chunk case-insensitive; trailing `.!?,;:` is stripped.
 | value prefix | effect |
 |---|---|
 | *(none)* | type the value as text (supports `\n`, `\t`, `\\` escapes) |
-| `!cmd args` | run shell command via `cmd /c` |
+| `!cmd args` | run shell command via `cmd /c` (fire-and-forget) |
 | `>>https://url` | POST current selection, replace it with the response body |
 | `>>local:NAME` | apply built-in transform to selection: `lower`, `upper`, `trim`, `reverse`, `md5`, `sha256` |
+| `>>exec:cmd args` | pipe the current selection into `cmd` as stdin, type stdout back over the selection |
+| `>>cmd:cmd args` | run `cmd` with no stdin, type stdout at the caret (use with regex captures for voice-prompt commands) |
 | `^chord[,chord ...]` | send key sequence (`ctrl+a`, `home,shift+end,delete`, …) |
 | `/pattern/flags` | regex trigger (`i`, `m`, `s`, `x`). Whole-chunk match (`/^...$/`) expands captures into the value, then treats it as an action — enabling parameterised commands. |
 
-Five maps ship as templates and can be toggled per-domain in the tray:
-**global · launch · programming · medical · legal**.
+Six maps ship as templates and can be toggled per-domain in the tray:
+**global · launch · programming · medical · legal · ai**. The `ai` map
+contains ready-to-use triggers for **Claude CLI, OpenAI, OpenRouter,
+Ollama, LM Studio, vLLM, and llama.cpp** — both inline PowerShell
+oneliners and matching helper scripts (`.ps1` and `.py`, stdlib-only)
+shipped to `%APPDATA%\whisper-local\helpers\`.
 
 Built-in voice commands press Enter without needing a rule:
 `new line`, `newline`, `enter`, `return`, `neue zeile`, `zeilenumbruch`, `absatz`.
@@ -81,6 +87,14 @@ open settings:^win+i
 lowercase selected:>>local:lower
 md5 selected:>>local:md5
 fix grammar:>>https://api.example.com/grammar
+
+# voice-prompt AI: speak the trigger + your question, answer types at the caret
+/^ask claude (.+)$/i:>>cmd:powershell -NoProfile -Command "'$1' | claude -p --allowedTools 'Read,Edit,Bash' -"
+/^ask ollama (.+)$/i:>>cmd:powershell -NoProfile -Command "$b=@{model='llama3';stream=$false;messages=@(@{role='user';content='$1'})}|ConvertTo-Json -Depth 8 -Compress; (Invoke-RestMethod -Uri 'http://localhost:11434/api/chat' -Method Post -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($b))).message.content"
+
+# rewrite selection with an AI: select text, say the trigger, answer replaces selection
+ask gpt:>>exec:powershell -NoProfile -File "%APPDATA%\whisper-local\helpers\openai.ps1"
+fix grammar:>>exec:powershell -NoProfile -File "%APPDATA%\whisper-local\helpers\openrouter.ps1" -Model "anthropic/claude-3.5-sonnet"
 ```
 
 Full reference: [SYNTAX-README.md](SYNTAX-README.md).

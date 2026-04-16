@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 20260416 (v0.2.1)
+- **Files changed:** `Cargo.toml`, `src/config.rs`, `src/main.rs`, `src/tray.rs`, `src/postprocess.rs`, `src/settings_ui.rs`, `src/inject.rs`, `README.md`, `templates/helpers/*` (new), `templates/replace_maps/ai.txt` (new)
+- **What changed:**
+  - New action prefixes `>>exec:cmd` (pipe selection into stdin, type stdout back) and `>>cmd:cmd` (run with no stdin, type stdout — used with regex captures for voice-prompt commands like `/^ask claude (.+)$/i:>>cmd:...`).
+  - Ships a new `ai.txt` replace map + `helpers/` directory with stdlib-only scripts for **Claude CLI, OpenAI, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp** — both `.ps1` and `.py` variants for each.
+  - Settings: left-click checkbox label now reads "Left-click tray icon starts command mode" (was "listen mode"). When that toggle fires from the tray, **Drop non-commands** is automatically checked and greyed out; the checkbox is unlocked and its prior state restored when listen mode turns off.
+  - Inject adds more symbolic keys: `printscreen`/`prtsc`/`print`, `insert`/`ins`, `pause`/`break`, `capslock`, `scrolllock`, `numlock`, `menu`/`apps`.
+  - run_shell detects URL-launch patterns (`start "" "https://..."`) and routes them through `webbrowser::open` to sidestep cmd.exe quoting.
+
 ## 20260416 (v0.2.0)
 - **Files changed:** `Cargo.toml`, `src/config.rs`, `src/main.rs`, `src/tray.rs`, `src/overlay.rs`, `src/inject.rs`, `src/postprocess.rs`, `src/settings_ui.rs`, `src/lib.rs`, `README.md`, `SYNTAX-README.md` (new), `templates/replace_maps/*.txt` (new), `templates/syntax/*.txt` (new)
 - **What changed:**

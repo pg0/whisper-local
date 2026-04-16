@@ -99,6 +99,8 @@ fn main() -> anyhow::Result<()> {
     // Tracks the listen-mode flags we paused when the user pressed the chord
     // mid-listen, so we can restore them after the dictation finishes.
     let suspended_listen: Arc<Mutex<Option<(bool, bool)>>> = Arc::new(Mutex::new(None));
+    // Pre-listen state of command_mode, restored when listen mode toggles off.
+    let listen_saved_cmd: Arc<Mutex<Option<bool>>> = Arc::new(Mutex::new(None));
     let map_cache: Arc<Mutex<postprocess::MapCache>> = Arc::new(Mutex::new(Default::default()));
 
     loop {
@@ -115,6 +117,7 @@ fn main() -> anyhow::Result<()> {
                     &mut tray,
                     &app_tx,
                     &auto_stop_pending,
+                    &listen_saved_cmd,
                 );
             } else {
                 handle_tray_event(ev, &overlay, &cfg, &app_tx)?;
@@ -176,6 +179,7 @@ fn main() -> anyhow::Result<()> {
                     &mut tray,
                     &app_tx,
                     &auto_stop_pending,
+                    &listen_saved_cmd,
                 );
             }
             Ok(AppMsg::Tray(ev)) => {
@@ -547,6 +551,8 @@ fn stop_and_transcribe(
                             Action::Run(cmd) => run_shell(&cmd),
                             Action::Rewrite(url) => rewrite_selection(&url),
                             Action::Transform(name) => transform_selection(&name),
+                            Action::Exec(cmd) => exec_selection(&cmd),
+                            Action::Cmd(cmd) => exec_noinput(&cmd),
                             Action::Keys(seq) => inject::send_keys(&seq),
                         }
                     }
@@ -602,6 +608,7 @@ fn handle_toggle_listen(
     tray: &mut Tray,
     app_tx: &crossbeam_channel::Sender<AppMsg>,
     auto_stop_pending: &Arc<AtomicBool>,
+    listen_saved_cmd: &Arc<Mutex<Option<bool>>>,
 ) {
     if !cfg.lock().left_click_listen {
         log::info!("listen: left-click disabled in settings");
@@ -614,11 +621,18 @@ fn handle_toggle_listen(
     let turn_on = !was_on;
     {
         let mut c = cfg.lock();
-        c.continuous = turn_on;
-        c.command_mode = turn_on;
+        if turn_on {
+            *listen_saved_cmd.lock() = Some(c.command_mode);
+            c.continuous = true;
+            c.command_mode = true;
+        } else {
+            c.continuous = false;
+            c.command_mode = listen_saved_cmd.lock().take().unwrap_or(false);
+        }
         let _ = c.save();
     }
-    tray.set_command_mode(turn_on);
+    tray.set_command_mode(cfg.lock().command_mode);
+    tray.set_command_mode_locked(turn_on);
     log::info!("listen: {}", if turn_on { "on" } else { "off" });
     if turn_on {
         start_capture(cfg, slot, overlay, true, tray, app_tx, auto_stop_pending);
@@ -705,10 +719,37 @@ fn bootstrap_replace_maps() {
         ("legal.txt", include_str!("../templates/replace_maps/legal.txt")),
         ("programming.txt", include_str!("../templates/replace_maps/programming.txt")),
         ("launch.txt", include_str!("../templates/replace_maps/launch.txt")),
+        ("ai.txt", include_str!("../templates/replace_maps/ai.txt")),
     ] {
         let p = dir.join(name);
         if !p.exists() {
             let _ = std::fs::write(&p, contents);
+        }
+    }
+    if let Ok(cfg_dir) = whisper_local::config::config_dir() {
+        let helpers = cfg_dir.join("helpers");
+        let _ = std::fs::create_dir_all(&helpers);
+        for (name, contents) in [
+            ("_common.py",     include_str!("../templates/helpers/_common.py")),
+            ("claude.ps1",     include_str!("../templates/helpers/claude.ps1")),
+            ("claude.py",      include_str!("../templates/helpers/claude.py")),
+            ("openai.ps1",     include_str!("../templates/helpers/openai.ps1")),
+            ("openai.py",      include_str!("../templates/helpers/openai.py")),
+            ("openrouter.ps1", include_str!("../templates/helpers/openrouter.ps1")),
+            ("openrouter.py",  include_str!("../templates/helpers/openrouter.py")),
+            ("ollama.ps1",     include_str!("../templates/helpers/ollama.ps1")),
+            ("ollama.py",      include_str!("../templates/helpers/ollama.py")),
+            ("lmstudio.ps1",   include_str!("../templates/helpers/lmstudio.ps1")),
+            ("lmstudio.py",    include_str!("../templates/helpers/lmstudio.py")),
+            ("vllm.ps1",       include_str!("../templates/helpers/vllm.ps1")),
+            ("vllm.py",        include_str!("../templates/helpers/vllm.py")),
+            ("llamacpp.ps1",   include_str!("../templates/helpers/llamacpp.ps1")),
+            ("llamacpp.py",    include_str!("../templates/helpers/llamacpp.py")),
+        ] {
+            let p = helpers.join(name);
+            if !p.exists() {
+                let _ = std::fs::write(&p, contents);
+            }
         }
     }
 }
@@ -803,6 +844,102 @@ fn strip_http_url(s: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Run a command with no stdin, capture stdout, type the result at the
+/// caret. Used by replace_map `>>cmd:` entries — where the input was baked
+/// into the command line via regex captures, not taken from a selection.
+fn exec_noinput(cmd: &str) {
+    use std::os::windows::process::CommandExt;
+    let cmd = cmd.to_string();
+    log::info!("exec_noinput: {cmd}");
+    std::thread::spawn(move || {
+        let out = std::process::Command::new("cmd")
+            .raw_arg(format!("/c {cmd}"))
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output();
+        let out = match out {
+            Ok(o) => o,
+            Err(e) => {
+                log::error!("exec_noinput spawn: {e}");
+                return;
+            }
+        };
+        if !out.status.success() {
+            log::error!(
+                "exec_noinput non-zero exit: {}, stderr={:?}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr)
+            );
+            return;
+        }
+        let body = String::from_utf8_lossy(&out.stdout).trim_end().to_string();
+        if body.is_empty() {
+            log::warn!("exec_noinput: empty stdout");
+            return;
+        }
+        inject::type_text(&body);
+    });
+}
+
+/// Read the current selection (Ctrl+C → clipboard), pipe it into a local
+/// command as stdin, type the command's stdout back over the selection.
+/// Used by replace_map `>>exec:` entries.
+fn exec_selection(cmd: &str) {
+    use std::io::Write;
+    use std::os::windows::process::CommandExt;
+    let cmd = cmd.to_string();
+    log::info!("exec_selection: {cmd}");
+    std::thread::spawn(move || {
+        inject::send_copy();
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        let selection = match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("exec_selection: clipboard read: {e}");
+                return;
+            }
+        };
+        let mut child = match std::process::Command::new("cmd")
+            .raw_arg(format!("/c {cmd}"))
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("exec_selection spawn: {e}");
+                return;
+            }
+        };
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(selection.as_bytes());
+        }
+        let out = match child.wait_with_output() {
+            Ok(o) => o,
+            Err(e) => {
+                log::error!("exec_selection wait: {e}");
+                return;
+            }
+        };
+        if !out.status.success() {
+            log::error!(
+                "exec_selection non-zero exit: {}, stderr={:?}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr)
+            );
+            return;
+        }
+        let body = String::from_utf8_lossy(&out.stdout).trim_end().to_string();
+        if body.is_empty() {
+            log::warn!("exec_selection: empty stdout");
+            return;
+        }
+        inject::type_text(&body);
+    });
 }
 
 /// Send Ctrl+C to copy the current selection, POST it to `url` as a plain-text

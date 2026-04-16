@@ -56,6 +56,13 @@ pub enum Action {
     /// Apply a built-in transform to the current selection (lower, upper,
     /// md5, sha256, trim, reverse).
     Transform(String),
+    /// Pipe the current selection into an external command via stdin, type
+    /// the command's stdout back over the selection.
+    Exec(String),
+    /// Run an external command with no stdin, type the command's stdout at
+    /// the caret. Used when the input comes via captured args rather than a
+    /// selection (voice prompts like `/^ask claude (.+)$/`).
+    Cmd(String),
     /// Send a sequence of key chords (e.g. `ctrl+a`, `home,shift+end`).
     Keys(String),
 }
@@ -193,6 +200,10 @@ fn classify_value(value: &str) -> Action {
         let rest = rest.trim();
         if let Some(name) = rest.strip_prefix("local:") {
             Action::Transform(name.trim().to_lowercase())
+        } else if let Some(cmd) = rest.strip_prefix("exec:") {
+            Action::Exec(cmd.trim().to_string())
+        } else if let Some(cmd) = rest.strip_prefix("cmd:") {
+            Action::Cmd(cmd.trim().to_string())
         } else {
             Action::Rewrite(rest.to_string())
         }

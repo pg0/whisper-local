@@ -1,0 +1,68 @@
+# AI integration samples (off by default — enable in the tray).
+#
+# Every trigger takes the current selection on stdin and types the reply
+# back over the selection. Oneliners are active by default; helper-script
+# versions sit right next to them as comments for when you want to edit
+# model / endpoint / system prompt in a file.
+#
+# Helpers live in %APPDATA%\whisper-local\helpers\ (both .ps1 and .py ship).
+
+# ---------------------------------------------------------------- env vars
+# $env:OPENAI_API_KEY      = 'sk-...'
+# $env:OPENROUTER_API_KEY  = 'sk-or-...'
+# setx OPENAI_API_KEY "sk-..."     (persist for your user, new terminals)
+
+# =============================================================== Claude CLI
+# Anthropic's `claude` must be on PATH.
+#
+# >>exec: rewrites the SELECTION (select text first, then speak trigger).
+# >>cmd:  runs without stdin; used with regex captures so "ask claude <prompt>"
+#         types the answer wherever the caret is.
+
+ask claude:>>exec:powershell -NoProfile -Command "$i=[Console]::In.ReadToEnd(); $i | claude -p --allowedTools 'Read,Edit,Bash' -"
+/^ask claude (.+)$/i:>>cmd:powershell -NoProfile -Command "'$1' | claude -p --allowedTools 'Read,Edit,Bash' -"
+
+# helper (ps1 / py):
+# ask claude:>>exec:powershell -NoProfile -File "%APPDATA%\whisper-local\helpers\claude.ps1"
+# ask claude:>>exec:python "%APPDATA%\whisper-local\helpers\claude.py"
+
+# =============================================================== OpenAI
+ask gpt:>>exec:powershell -NoProfile -Command "$i=[Console]::In.ReadToEnd(); $b=@{model='gpt-4o-mini';messages=@(@{role='user';content=$i})}|ConvertTo-Json -Depth 8 -Compress; (Invoke-RestMethod -Uri 'https://api.openai.com/v1/chat/completions' -Method Post -Headers @{Authorization=\"Bearer $env:OPENAI_API_KEY\"} -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($b))).choices[0].message.content"
+/^ask gpt (.+)$/i:>>cmd:powershell -NoProfile -Command "$b=@{model='gpt-4o-mini';messages=@(@{role='user';content='$1'})}|ConvertTo-Json -Depth 8 -Compress; (Invoke-RestMethod -Uri 'https://api.openai.com/v1/chat/completions' -Method Post -Headers @{Authorization=\"Bearer $env:OPENAI_API_KEY\"} -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($b))).choices[0].message.content"
+# helper (ps1 / py):
+# ask gpt:>>exec:powershell -NoProfile -File "%APPDATA%\whisper-local\helpers\openai.ps1"
+# ask gpt:>>exec:python "%APPDATA%\whisper-local\helpers\openai.py"
+
+# =============================================================== OpenRouter (cloud, any model)
+ask openrouter:>>exec:powershell -NoProfile -Command "$i=[Console]::In.ReadToEnd(); $b=@{model='openai/gpt-4o-mini';messages=@(@{role='user';content=$i})}|ConvertTo-Json -Depth 8 -Compress; (Invoke-RestMethod -Uri 'https://openrouter.ai/api/v1/chat/completions' -Method Post -Headers @{Authorization=\"Bearer $env:OPENROUTER_API_KEY\"} -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($b))).choices[0].message.content"
+# helper (ps1 / py):
+# ask openrouter:>>exec:powershell -NoProfile -File "%APPDATA%\whisper-local\helpers\openrouter.ps1"
+# ask openrouter:>>exec:python "%APPDATA%\whisper-local\helpers\openrouter.py"
+# ask claude router:>>exec:powershell -NoProfile -File "%APPDATA%\whisper-local\helpers\openrouter.ps1" -Model "anthropic/claude-3.5-sonnet"
+
+# =============================================================== Ollama (local, http://localhost:11434/api/chat)
+ask ollama:>>exec:powershell -NoProfile -Command "$i=[Console]::In.ReadToEnd(); $b=@{model='llama3';stream=$false;messages=@(@{role='user';content=$i})}|ConvertTo-Json -Depth 8 -Compress; (Invoke-RestMethod -Uri 'http://localhost:11434/api/chat' -Method Post -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($b))).message.content"
+/^ask ollama (.+)$/i:>>cmd:powershell -NoProfile -Command "$b=@{model='llama3';stream=$false;messages=@(@{role='user';content='$1'})}|ConvertTo-Json -Depth 8 -Compress; (Invoke-RestMethod -Uri 'http://localhost:11434/api/chat' -Method Post -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($b))).message.content"
+# helper (ps1 / py):
+# ask ollama:>>exec:powershell -NoProfile -File "%APPDATA%\whisper-local\helpers\ollama.ps1"
+# ask ollama:>>exec:python "%APPDATA%\whisper-local\helpers\ollama.py"
+
+# =============================================================== LM Studio (local, http://localhost:1234/v1/chat/completions)
+ask lmstudio:>>exec:powershell -NoProfile -Command "$i=[Console]::In.ReadToEnd(); $b=@{model='local-model';messages=@(@{role='user';content=$i})}|ConvertTo-Json -Depth 8 -Compress; (Invoke-RestMethod -Uri 'http://localhost:1234/v1/chat/completions' -Method Post -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($b))).choices[0].message.content"
+# helper (ps1 / py):
+# ask lmstudio:>>exec:powershell -NoProfile -File "%APPDATA%\whisper-local\helpers\lmstudio.ps1"
+# ask lmstudio:>>exec:python "%APPDATA%\whisper-local\helpers\lmstudio.py"
+
+# =============================================================== vLLM (local, http://localhost:8000/v1/chat/completions)
+# start:  python -m vllm.entrypoints.openai.api_server --model <repo>
+ask vllm:>>exec:powershell -NoProfile -Command "$i=[Console]::In.ReadToEnd(); $b=@{model='local-model';messages=@(@{role='user';content=$i})}|ConvertTo-Json -Depth 8 -Compress; (Invoke-RestMethod -Uri 'http://localhost:8000/v1/chat/completions' -Method Post -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($b))).choices[0].message.content"
+# helper (ps1 / py):
+# ask vllm:>>exec:powershell -NoProfile -File "%APPDATA%\whisper-local\helpers\vllm.ps1"
+# ask vllm:>>exec:python "%APPDATA%\whisper-local\helpers\vllm.py"
+
+# =============================================================== llama.cpp server (local, http://localhost:8080/v1/chat/completions)
+# start:  llama-server -m model.gguf --port 8080
+ask llamacpp:>>exec:powershell -NoProfile -Command "$i=[Console]::In.ReadToEnd(); $b=@{model='local-model';messages=@(@{role='user';content=$i})}|ConvertTo-Json -Depth 8 -Compress; (Invoke-RestMethod -Uri 'http://localhost:8080/v1/chat/completions' -Method Post -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($b))).choices[0].message.content"
+# helper (ps1 / py):
+# ask llamacpp:>>exec:powershell -NoProfile -File "%APPDATA%\whisper-local\helpers\llamacpp.ps1"
+# ask llamacpp:>>exec:python "%APPDATA%\whisper-local\helpers\llamacpp.py"
