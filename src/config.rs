@@ -88,11 +88,15 @@ impl Default for WhisperCfg {
 }
 
 impl WhisperCfg {
+    fn trimmed_base_url(&self) -> &str {
+        self.base_url.trim_end_matches('/')
+    }
+
     pub fn transcribe_url(&self) -> String {
-        format!("{}/v1/audio/transcriptions", self.base_url.trim_end_matches('/'))
+        format!("{}/v1/audio/transcriptions", self.trimmed_base_url())
     }
     pub fn health_url(&self) -> String {
-        format!("{}/health", self.base_url.trim_end_matches('/'))
+        format!("{}/health", self.trimmed_base_url())
     }
 }
 
