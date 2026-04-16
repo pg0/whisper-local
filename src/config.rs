@@ -16,6 +16,10 @@ pub struct Config {
     /// When true, transcripts that don't match a replace-map rule are dropped
     /// (no text is typed). Lets the app run as a pure voice-command surface.
     pub command_mode: bool,
+    /// When true, left-clicking the tray icon starts a listen session
+    /// (continuous + command_mode on, mic latched). When false, left-click
+    /// does nothing (menu stays on right-click only).
+    pub left_click_listen: bool,
     /// Master switch for the replace-map machinery. When false, no file in
     /// replace_maps/ is loaded.
     pub replace_maps_enabled: bool,
@@ -46,6 +50,7 @@ impl Default for Config {
             language: String::new(),
             newline_feed: false,
             command_mode: false,
+            left_click_listen: true,
             replace_maps_enabled: true,
             enabled_replace_maps: vec!["global.txt".into()],
             auto_hold: false,

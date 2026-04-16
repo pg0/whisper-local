@@ -99,6 +99,7 @@ fn main() -> anyhow::Result<()> {
     // Tracks the listen-mode flags we paused when the user pressed the chord
     // mid-listen, so we can restore them after the dictation finishes.
     let suspended_listen: Arc<Mutex<Option<(bool, bool)>>> = Arc::new(Mutex::new(None));
+    let map_cache: Arc<Mutex<postprocess::MapCache>> = Arc::new(Mutex::new(Default::default()));
 
     loop {
         // Pump Win32 messages so tray-icon clicks/menu events dispatch.
@@ -152,6 +153,7 @@ fn main() -> anyhow::Result<()> {
                     let was_auto = auto_stop_pending.swap(false, Ordering::SeqCst);
                     stop_and_transcribe(
                         &cfg, &recording, &overlay, &mut tray, &app_tx, was_auto,
+                        &map_cache,
                     );
                     // Restore listen mode if the chord had paused it.
                     if let Some((cont, cmd)) = suspended_listen.lock().take() {
@@ -467,6 +469,7 @@ fn stop_and_transcribe(
     tray: &mut Tray,
     app_tx: &crossbeam_channel::Sender<AppMsg>,
     was_auto: bool,
+    map_cache: &Arc<Mutex<postprocess::MapCache>>,
 ) {
     let cap = slot.lock().take();
     let Some(cap) = cap else {
@@ -507,15 +510,15 @@ fn stop_and_transcribe(
                 let _ = app_tx_t.send(AppMsg::RestartContinuous);
             }
             let loop_stitch = was_auto && continuous;
+            let map = if replace_maps_on {
+                map_cache.lock().get(&active_maps)
+            } else {
+                Arc::new(postprocess::ReplaceMap::default())
+            };
             std::thread::spawn(move || {
                 match whisper::transcribe(&wav, &language, &whisper_cfg) {
                     Ok(text) if !text.is_empty() => {
                         log::info!("transcript: {}", text);
-                        let map = if replace_maps_on {
-                            postprocess::load_replace_map(&active_maps)
-                        } else {
-                            postprocess::ReplaceMap::default()
-                        };
                         let action_opt = postprocess::process_strict(&text, &map);
                         if action_opt.is_some() {
                             overlay_clone.replacement_hit();
@@ -600,6 +603,10 @@ fn handle_toggle_listen(
     app_tx: &crossbeam_channel::Sender<AppMsg>,
     auto_stop_pending: &Arc<AtomicBool>,
 ) {
+    if !cfg.lock().left_click_listen {
+        log::info!("listen: left-click disabled in settings");
+        return;
+    }
     let was_on = {
         let c = cfg.lock();
         c.continuous && c.command_mode

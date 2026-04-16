@@ -1,10 +1,40 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::SystemTime;
 
 use regex::Regex;
 
 use crate::config;
+
+/// Cached replace map keyed on the (active filenames, mtimes) signature so
+/// the map isn't re-parsed on every transcript chunk unless something
+/// actually changed on disk or in the active set.
+#[derive(Default)]
+pub struct MapCache {
+    map: Arc<ReplaceMap>,
+    signature: Vec<(String, Option<SystemTime>)>,
+}
+
+impl MapCache {
+    pub fn get(&mut self, active: &[String]) -> Arc<ReplaceMap> {
+        let sig: Vec<_> = active
+            .iter()
+            .map(|n| (n.clone(), file_mtime(n)))
+            .collect();
+        if sig != self.signature {
+            self.map = Arc::new(load_replace_map(active));
+            self.signature = sig;
+        }
+        self.map.clone()
+    }
+}
+
+fn file_mtime(name: &str) -> Option<SystemTime> {
+    let path = replace_maps_dir()?.join(name);
+    fs::metadata(&path).ok().and_then(|m| m.modified().ok())
+}
 
 #[derive(Debug, Default)]
 pub struct ReplaceMap {
@@ -231,38 +261,7 @@ pub fn process_strict(text: &str, map: &ReplaceMap) -> Option<Action> {
 }
 
 pub fn process(text: &str, map: &ReplaceMap) -> Action {
-    let key = normalize(text);
-    if ENTER_COMMANDS.contains(&key.as_str()) {
-        return Action::Enter;
-    }
-    if let Some(replacement) = map.plain.get(&key) {
-        return classify_value(replacement);
-    }
-    // Whole-chunk regex match → expand captures into the value, then classify
-    // it as an action. Lets you write parameterised commands like
-    //   /^google for (.+)$/i:!cmd /c start "" "https://google.com/search?q=$1"
-    let trimmed = strip_for_match(text);
-    for (re, repl) in &map.regexes {
-        if let Some(caps) = re.captures(&trimmed) {
-            if let Some(m) = caps.get(0) {
-                if m.start() == 0 && m.end() == trimmed.len() {
-                    let mut buf = String::new();
-                    caps.expand(repl, &mut buf);
-                    return classify_value(&buf);
-                }
-            }
-        }
-    }
-    // Substring fallback — replace_all over the raw text, e.g. /clode/:Claude
-    // turns "I love clode" into "I love Claude".
-    if !map.regexes.is_empty() {
-        let mut out = text.to_string();
-        for (re, repl) in &map.regexes {
-            out = re.replace_all(&out, repl.as_str()).into_owned();
-        }
-        return Action::Text(out);
-    }
-    Action::Text(text.to_string())
+    process_strict(text, map).unwrap_or_else(|| Action::Text(text.to_string()))
 }
 
 #[cfg(test)]

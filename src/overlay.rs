@@ -169,29 +169,26 @@ impl eframe::App for App {
                 View::Recording { ready, .. } => {
                     ui.horizontal_centered(|ui| {
                         let t = ui.input(|i| i.time) as f32;
-                        let (dot_rgb, freq) = if !ready {
-                            ((240, 180, 40), 5.0)
-                        } else {
-                            ((255, 70, 70), 6.0)
-                        };
+                        // Replacement-hit: for ~0.6 s after a rule fires we
+                        // pull the dot + wave colors toward green.
+                        let hit = self
+                            .replacement_at
+                            .lock()
+                            .and_then(|ts| {
+                                let age = ts.elapsed().as_secs_f32();
+                                (age < 0.6).then_some(1.0 - age / 0.6)
+                            })
+                            .unwrap_or(0.0);
+                        let base_dot = if !ready { (240, 180, 40) } else { (255, 70, 70) };
+                        let dot_rgb = blend(base_dot, (90, 220, 120), hit);
+                        let freq = if !ready { 5.0 } else { 6.0 };
                         let pulse = 0.6 + 0.4 * (t * freq).sin().abs();
                         draw_dot(ui, dot_rgb, pulse, 4.0);
                         if ready {
                             ui.add_space(6.0);
                             let bars = self.bars.lock().clone();
                             let peak = *self.peak.lock();
-                            draw_bars(ui, &bars, peak);
-                        }
-                        // Replacement-hit indicator: bright green dot for ~1 s
-                        // after a rule fires.
-                        let rep = *self.replacement_at.lock();
-                        if let Some(ts) = rep {
-                            let age = ts.elapsed().as_secs_f32();
-                            if age < 1.0 {
-                                ui.add_space(6.0);
-                                let alpha = 1.0 - age;
-                                draw_dot(ui, (90, 220, 120), alpha, 5.0);
-                            }
+                            draw_bars(ui, &bars, peak, hit);
                         }
                     });
                 }
@@ -211,6 +208,15 @@ impl eframe::App for App {
 }
 
 #[cfg(feature = "overlay-ui")]
+fn blend(a: (u8, u8, u8), b: (u8, u8, u8), t: f32) -> (u8, u8, u8) {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |x: u8, y: u8| -> u8 {
+        (x as f32 * (1.0 - t) + y as f32 * t).round().clamp(0.0, 255.0) as u8
+    };
+    (lerp(a.0, b.0), lerp(a.1, b.1), lerp(a.2, b.2))
+}
+
+#[cfg(feature = "overlay-ui")]
 fn draw_dot(ui: &mut egui::Ui, rgb: (u8, u8, u8), alpha: f32, radius: f32) {
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(radius * 2.0 + 2.0, radius * 2.0 + 2.0), egui::Sense::hover());
@@ -220,7 +226,7 @@ fn draw_dot(ui: &mut egui::Ui, rgb: (u8, u8, u8), alpha: f32, radius: f32) {
 }
 
 #[cfg(feature = "overlay-ui")]
-fn draw_bars(ui: &mut egui::Ui, bars: &[f32], peak: f32) {
+fn draw_bars(ui: &mut egui::Ui, bars: &[f32], peak: f32, hit: f32) {
     const BAR_COUNT: usize = 36;
     let avail = ui.available_width().min(140.0).max(60.0);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(avail, 22.0), egui::Sense::hover());
@@ -244,6 +250,7 @@ fn draw_bars(ui: &mut egui::Ui, bars: &[f32], peak: f32) {
         let r_c = (240.0 + scaled * 15.0).min(255.0) as u8;
         let g_c = (80.0 + scaled * 140.0).min(220.0) as u8;
         let b_c = (100.0 + scaled * 130.0).min(210.0) as u8;
+        let (r_c, g_c, b_c) = blend((r_c, g_c, b_c), (90, 220, 120), hit);
         let color = egui::Color32::from_rgba_unmultiplied(r_c, g_c, b_c, (alpha * 255.0) as u8);
         let x = rect.left() + i as f32 * slot_w;
         let y = rect.center().y;

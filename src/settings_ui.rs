@@ -244,6 +244,16 @@ impl eframe::App for SettingsApp {
             });
 
             ui.add_space(8.0);
+            let mut lcl = st.cfg.left_click_listen;
+            if ui
+                .checkbox(&mut lcl, "Left-click tray icon starts listen mode")
+                .on_hover_text("When on, clicking the tray icon toggles continuous command listening.")
+                .changed()
+            {
+                st.cfg.left_click_listen = lcl;
+            }
+
+            ui.add_space(8.0);
             let mut enabled = st.autostart_enabled;
             if ui.checkbox(&mut enabled, "Start at login").changed() {
                 if let Ok(exe) = autostart::current_exe_path() {
