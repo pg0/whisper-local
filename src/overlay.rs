@@ -44,6 +44,14 @@ pub fn spawn() -> OverlayHandle {
     OverlayHandle(tx)
 }
 
+/// Drain overlay commands on a background thread and return a handle.
+/// Used as a fallback when the child process can't be spawned.
+#[cfg(feature = "overlay-ui")]
+fn noop_overlay(tx: Sender<OverlayCmd>, rx: Receiver<OverlayCmd>) -> OverlayHandle {
+    std::thread::spawn(move || while rx.recv().is_ok() {});
+    OverlayHandle(tx)
+}
+
 #[cfg(feature = "overlay-ui")]
 #[derive(Clone)]
 enum View {
@@ -117,9 +125,8 @@ impl eframe::App for App {
                     if b.len() >= 64 { b.remove(0); }
                     b.push(r);
                     let mut pk = self.peak.lock();
-                    *pk = pk.max(r).max(0.05);
-                    *pk = *pk * 0.97 + r * 0.03;
-                    if *pk < 0.05 { *pk = 0.05; }
+                    *pk = (*pk).max(r);
+                    *pk = (*pk * 0.97 + r * 0.03).max(0.05);
                 }
                 OverlayCmd::ReplacementHit => {
                     *self.replacement_at.lock() = Some(Instant::now());
@@ -273,8 +280,7 @@ pub fn spawn() -> OverlayHandle {
         Ok(p) => p,
         Err(e) => {
             log::error!("overlay: current_exe failed: {e}");
-            std::thread::spawn(move || while rx.recv().is_ok() {});
-            return OverlayHandle(tx);
+            return noop_overlay(tx, rx);
         }
     };
     let mut child = match std::process::Command::new(&exe)
@@ -287,8 +293,7 @@ pub fn spawn() -> OverlayHandle {
         Ok(c) => c,
         Err(e) => {
             log::error!("overlay: failed to spawn child: {e}");
-            std::thread::spawn(move || while rx.recv().is_ok() {});
-            return OverlayHandle(tx);
+            return noop_overlay(tx, rx);
         }
     };
     log::info!("overlay: child pid={}", child.id());

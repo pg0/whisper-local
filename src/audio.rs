@@ -155,7 +155,7 @@ fn resample_to_16k(input: Vec<f32>, input_rate: u32) -> Result<Vec<f32>> {
 }
 
 pub fn encode_wav(samples: &[f32]) -> Result<Vec<u8>> {
-    let mut buf = std::io::Cursor::new(Vec::<u8>::new());
+    let mut buf = std::io::Cursor::new(Vec::new());
     {
         let spec = hound::WavSpec {
             channels: 1,

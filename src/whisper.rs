@@ -29,6 +29,15 @@ pub fn transcribe(wav: &[u8], language: &str, cfg: &WhisperCfg) -> Result<String
     transcribe_file_bytes(wav, "audio.wav", cfg.request_timeout_secs, language, cfg)
 }
 
+/// Build an HTTP client and verify the whisper server is reachable.
+fn prepare_client(timeout_secs: u64, cfg: &WhisperCfg) -> Result<Client> {
+    let client = Client::builder()
+        .timeout(Duration::from_secs(timeout_secs.max(30)))
+        .build()?;
+    ensure_up(&client, cfg).context("whisper unreachable")?;
+    Ok(client)
+}
+
 /// Transcribe arbitrary audio/video file bytes with a caller-specified filename
 /// (extension helps the server pick a decoder) and a caller-specified timeout.
 pub fn transcribe_file_bytes(
@@ -38,10 +47,7 @@ pub fn transcribe_file_bytes(
     language: &str,
     cfg: &WhisperCfg,
 ) -> Result<String> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(timeout_secs.max(30)))
-        .build()?;
-    ensure_up(&client, cfg).context("whisper unreachable")?;
+    let client = prepare_client(timeout_secs, cfg)?;
     let mut form = multipart::Form::new()
         .part(
             "file",
@@ -130,10 +136,7 @@ pub fn transcribe_file_verbose(
     language: &str,
     cfg: &WhisperCfg,
 ) -> Result<TranscribeResult> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(timeout_secs.max(30)))
-        .build()?;
-    ensure_up(&client, cfg).context("whisper unreachable")?;
+    let client = prepare_client(timeout_secs, cfg)?;
     let mut form = multipart::Form::new()
         .part(
             "file",

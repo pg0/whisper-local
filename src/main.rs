@@ -108,7 +108,7 @@ fn main() -> anyhow::Result<()> {
         pump_win32_messages();
 
         // Pump tray events (try_recv style) before blocking recv.
-        while let Some(ev) = poll_tray_event(&tray) {
+        while let Some(ev) = tray.try_recv() {
             if matches!(ev, TrayEvent::ToggleListen) {
                 handle_toggle_listen(
                     &cfg,
@@ -302,10 +302,9 @@ fn handle_tray_event(
         }
         TrayEvent::OpenReplaceMapsFolder => {
             if let Some(dir) = postprocess::replace_maps_dir() {
-                let p = dir.clone();
                 std::thread::spawn(move || {
                     let _ = std::process::Command::new("explorer.exe")
-                        .arg(&p.display().to_string())
+                        .arg(&dir.display().to_string())
                         .spawn();
                 });
             }
@@ -342,11 +341,6 @@ fn handle_tray_event(
         }
     }
     Ok(())
-}
-
-/// Poll for the next tray event using the try_recv API exposed by Tray.
-fn poll_tray_event(tray: &Tray) -> Option<TrayEvent> {
-    tray.try_recv()
 }
 
 /// Drain any pending Win32 messages for this thread. Required so the
@@ -999,7 +993,7 @@ fn stitch_chunk(text: &str) -> String {
 }
 
 fn short_err(e: &anyhow::Error) -> String {
-    let s = format!("{e}");
+    let s = e.to_string();
     if s.contains("unreachable") || s.contains("dns") || s.contains("refused") {
         "Whisper unreachable".into()
     } else if s.contains("failed to come up") {
