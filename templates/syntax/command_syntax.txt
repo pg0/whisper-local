@@ -1,0 +1,90 @@
+Replace map syntax — whisper-local
+
+Files:    %APPDATA%\whisper-local\replace_maps\*.txt
+Format:   one mapping per line
+          # starts a comment
+          trigger:replacement
+
+Triggers match the WHOLE chunk, case-insensitive,
+trailing  .  !  ?  ,  ;  :  stripped before matching.
+
+
+Trigger forms:
+
+    plain text         Match the whole chunk verbatim.
+    /pattern/          Regex (substring substitution).
+    /pattern/flags     Regex with flags  i  m  s  x.
+    /^pattern$/flags   Whole-chunk regex — captures expand into the value
+                       via $1, $2, ...  Result is then run as an action.
+
+
+Value prefixes:
+
+    (none)             Type the value as text.
+    !cmd args          Run shell command via cmd /c.
+    >>https://url      POST current selection, replace with response body.
+    >>local:NAME       Apply built-in transform to the selection.
+    ^chord[,chord ..]  Send key sequence (modifiers + key, comma-sequenced).
+
+
+Built-in transforms (>>local:):
+
+    lower      uppercase → lowercase
+    upper      lowercase → uppercase
+    trim       strip leading + trailing whitespace
+    reverse    reverse character order
+    md5        hex MD5 hash of the selection
+    sha256     hex SHA-256 hash of the selection
+
+
+Key chord tokens (^):
+
+    Modifiers:    ctrl  shift  alt  win   (also: control, lwin, rwin)
+    Letters:      a-z
+    Digits:       0-9
+    Symbolic:     enter return tab esc space backspace delete
+                  home end pageup pagedown left right up down
+                  f1-f12
+
+    Combine with +    ctrl+shift+a
+    Sequence on ,     home,shift+end,delete
+
+
+Escape sequences (in the replacement value):
+
+    \n     newline (presses Enter between segments)
+    \t     tab character
+    \\     literal backslash
+    \X     other backslash sequences pass through verbatim
+
+
+Built-in voice commands → press Enter:
+
+    new line     newline     enter     return
+    neue zeile   zeilenumbruch          absatz
+
+
+Examples:
+
+    # plain text
+    my email:email@example.com
+
+    # multi-line text
+    my signature:--\nName\nemail@example.com
+
+    # regex substring (whisper mishearings)
+    /\bclode\b/i:Claude
+
+    # regex with parameter, runs a shell command
+    /^google for (.+)$/i:!start "" "https://www.google.com/search?q=$1"
+
+    # launch programs
+    open browser:!start chrome
+    open settings:^win+i
+
+    # selection transforms
+    lowercase selected:>>local:lower
+    md5 selected:>>local:md5
+
+    # rewrite selection via remote service
+    fix grammar:>>https://api.example.com/grammar

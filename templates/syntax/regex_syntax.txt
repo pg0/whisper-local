@@ -1,0 +1,79 @@
+Regex syntax — Rust `regex` crate (RE2-style: fast, no backtracking)
+
+
+Alternation, groups:
+
+    a|b              a or b
+    gr(a|e)y         gray or grey
+    ( )              capture group
+    (?:...)          non-capture group
+
+
+Character classes:
+
+    .                any single character
+    [abc]            a, b, or c
+    [^abc]           any single character except a, b, or c
+    [a-z]            range a..z
+    [a-zA-Z]         a..z or A..Z
+    \d  \w  \s       digit / word / whitespace shortcut
+    \D  \W  \S       non-digit / non-word / non-whitespace
+
+
+Anchors:
+
+    ^                start of input
+    $                end of input
+    \b               word boundary
+    \B               non word boundary
+
+
+Repetition:
+
+    *                preceding element zero or more times
+    +                preceding element one or more times
+    ?                preceding element zero or one time
+    {x}              preceding element exactly x times
+    {x,}             preceding element x or more times
+    {x,y}            preceding element between x and y times
+    *?  +?  ??       lazy variants of the above
+
+
+Backreferences and escapes:
+
+    \1 \2 ...        backreference inside the pattern
+    $1 $2 ...        backreference inside the replacement value
+    \\               literal backslash
+    \                escape the next special character
+
+
+Inline flag groups:
+
+    (?i)             case-insensitive
+    (?m)             multiline
+    (?s)             . matches \n
+    (?x)             ignore whitespace in the pattern
+
+    (or use /pattern/i, /pattern/im, etc.)
+
+
+Whisper-local specific:
+
+    /^pattern$/      Whole-chunk match. Required for parameterised
+                     commands so $1, $2 binds and the substituted value
+                     gets classified as an action (text, !cmd, >>url, ^keys).
+    /pattern/        Substring match. Each occurrence in the chunk is
+                     substituted; result is typed as plain text.
+
+Trailing  .  !  ?  ,  ;  :  is stripped from the chunk before regex
+matching, so /^google for (.+)$/i correctly captures "cats" from
+"Google for cats."
+
+
+Examples:
+
+    /\bclode\b/i:Claude
+    /\bjit\b/i:git
+    /^google for (.+)$/i:!start "" "https://www.google.com/search?q=$1"
+    /^(\d+) plus (\d+)$/i:$1 + $2
+    /^title case (.+)$/i:>>local:upper

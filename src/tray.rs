@@ -1,8 +1,6 @@
 use crate::audio::AudioCapture;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
-#[cfg(feature = "transcribe-file")]
-use tray_icon::{ClickType, TrayIconEvent};
+use tray_icon::{ClickType, Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 pub enum TrayEvent {
     #[cfg(feature = "gui")]
@@ -15,6 +13,9 @@ pub enum TrayEvent {
     OpenReplaceMapsFolder,
     ToggleReplaceMaps(bool),
     ToggleReplaceMapFile(String, bool),
+    /// Left-click on the tray icon: flip continuous + command_mode together
+    /// (turn the app into a pure voice-command surface, or back to passthrough).
+    ToggleListen,
     #[cfg(feature = "transcribe-file")]
     OpenTranscribeFile,
 }
@@ -93,7 +94,7 @@ impl Tray {
             CheckMenuItem::new("NewLine", true, newline_feed, None);
         menu.append(&newline_feed_item)?;
         let command_mode_item =
-            CheckMenuItem::new("Command mode (drop non-command speech)", true, command_mode, None);
+            CheckMenuItem::new("Drop non-commands", true, command_mode, None);
         menu.append(&command_mode_item)?;
 
         let replace_maps_submenu = Submenu::new("Replace maps", true);
@@ -113,8 +114,7 @@ impl Tray {
             replace_maps_submenu.append(&PredefinedMenuItem::separator())?;
         }
 
-        let open_replace_maps_folder_item =
-            MenuItem::new("replace_maps folder", true, None);
+        let open_replace_maps_folder_item = MenuItem::new("Config", true, None);
         replace_maps_submenu.append(&open_replace_maps_folder_item)?;
         let open_replace_maps_folder_id = open_replace_maps_folder_item.id().clone();
         menu.append(&replace_maps_submenu)?;
@@ -134,6 +134,7 @@ impl Tray {
             .with_tooltip("whisper-local")
             .with_icon(idle.clone())
             .with_menu(Box::new(menu))
+            .with_menu_on_left_click(false)
             .build()?;
 
         Ok(Self {
@@ -203,15 +204,16 @@ impl Tray {
                 return Some(TrayEvent::SelectLanguage(self.lang_items[idx].1.clone()));
             }
         }
-        // Then check icon-click events: left double-click opens file transcribe
-        // (only present when the transcribe-file feature is enabled).
-        #[cfg(feature = "transcribe-file")]
-        {
-            let icon_rx = TrayIconEvent::receiver();
-            if let Ok(e) = icon_rx.try_recv() {
-                if e.click_type == ClickType::Double {
-                    return Some(TrayEvent::OpenTranscribeFile);
-                }
+        // Tray icon clicks. Left = toggle listen mode. Double = open the
+        // transcribe-file window (when that feature is on).
+        let icon_rx = TrayIconEvent::receiver();
+        if let Ok(e) = icon_rx.try_recv() {
+            log::info!("tray icon click: {:?}", e.click_type);
+            match e.click_type {
+                #[cfg(feature = "transcribe-file")]
+                ClickType::Double => return Some(TrayEvent::OpenTranscribeFile),
+                ClickType::Left => return Some(TrayEvent::ToggleListen),
+                _ => {}
             }
         }
         None

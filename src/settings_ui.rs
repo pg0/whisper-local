@@ -2,6 +2,9 @@ use crate::audio::AudioCapture;
 use crate::autostart;
 use crate::config::Config;
 use eframe::egui;
+
+const COMMAND_SYNTAX: &str = include_str!("../templates/syntax/command_syntax.txt");
+const REGEX_SYNTAX: &str = include_str!("../templates/syntax/regex_syntax.txt");
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,6 +17,7 @@ pub fn open(initial: Config) -> Config {
         last_health_check: None,
         health_ok: false,
         save_clicked: false,
+        tab: Tab::General,
     }));
     let state_for_ui = state.clone();
     let mut vb = egui::ViewportBuilder::default()
@@ -33,6 +37,13 @@ pub fn open(initial: Config) -> Config {
     s.cfg.clone()
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    General,
+    CommandSyntax,
+    RegexSyntax,
+}
+
 struct SettingsState {
     cfg: Config,
     devices: Vec<String>,
@@ -40,6 +51,7 @@ struct SettingsState {
     last_health_check: Option<Instant>,
     health_ok: bool,
     save_clicked: bool,
+    tab: Tab,
 }
 
 struct SettingsApp {
@@ -68,7 +80,39 @@ impl eframe::App for SettingsApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("whisper-local settings");
-            ui.add_space(8.0);
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                for (tab, label) in [
+                    (Tab::General, "General"),
+                    (Tab::CommandSyntax, "Command Syntax"),
+                    (Tab::RegexSyntax, "Regex Syntax"),
+                ] {
+                    if ui.selectable_label(st.tab == tab, label).clicked() {
+                        st.tab = tab;
+                    }
+                }
+            });
+            ui.separator();
+            ui.add_space(4.0);
+
+            if st.tab != Tab::General {
+                let body = match st.tab {
+                    Tab::CommandSyntax => COMMAND_SYNTAX,
+                    Tab::RegexSyntax => REGEX_SYNTAX,
+                    Tab::General => "",
+                };
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut body.to_string())
+                                .font(egui::FontId::monospace(10.5))
+                                .desired_width(f32::INFINITY)
+                                .interactive(false),
+                        );
+                    });
+                return;
+            }
 
             ui.label("Microphone:");
             let current = st.cfg.mic_name.clone();

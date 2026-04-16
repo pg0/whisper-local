@@ -52,6 +52,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     init_logging();
+    bind_children_to_job();
     let cfg = Arc::new(Mutex::new(Config::load()?));
     log::info!(
         "whisper-local starting; whisper base = {}",
@@ -95,6 +96,9 @@ fn main() -> anyhow::Result<()> {
     // Set by the watcher when auto-stop fires so the main loop knows this
     // StopAndTranscribe came from silence detection (not a user chord press).
     let auto_stop_pending = Arc::new(AtomicBool::new(false));
+    // Tracks the listen-mode flags we paused when the user pressed the chord
+    // mid-listen, so we can restore them after the dictation finishes.
+    let suspended_listen: Arc<Mutex<Option<(bool, bool)>>> = Arc::new(Mutex::new(None));
 
     loop {
         // Pump Win32 messages so tray-icon clicks/menu events dispatch.
@@ -102,39 +106,76 @@ fn main() -> anyhow::Result<()> {
 
         // Pump tray events (try_recv style) before blocking recv.
         while let Some(ev) = poll_tray_event(&tray) {
-            handle_tray_event(ev, &overlay, &cfg, &app_tx)?;
+            if matches!(ev, TrayEvent::ToggleListen) {
+                handle_toggle_listen(
+                    &cfg,
+                    &recording,
+                    &overlay,
+                    &mut tray,
+                    &app_tx,
+                    &auto_stop_pending,
+                );
+            } else {
+                handle_tray_event(ev, &overlay, &cfg, &app_tx)?;
+            }
         }
 
         // Block for up to 100ms on the app channel (so we keep pumping tray).
         match app_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(AppMsg::Hotkey(ev)) => match ev {
-                HotkeyEvent::StartRecording => start_capture(
-                    &cfg,
-                    &recording,
-                    &overlay,
-                    false,
-                    &mut tray,
-                    &app_tx,
-                    &auto_stop_pending,
-                ),
-                HotkeyEvent::StartLatched => start_capture(
-                    &cfg,
-                    &recording,
-                    &overlay,
-                    true,
-                    &mut tray,
-                    &app_tx,
-                    &auto_stop_pending,
-                ),
+                HotkeyEvent::StartRecording | HotkeyEvent::StartLatched => {
+                    // Pressing the chord while in tray-toggled "listen" mode
+                    // pauses it for this dictation; restored after the chunk
+                    // is typed (see StopAndTranscribe handler).
+                    let mut c = cfg.lock();
+                    if c.command_mode || c.continuous {
+                        *suspended_listen.lock() = Some((c.continuous, c.command_mode));
+                        c.command_mode = false;
+                        c.continuous = false;
+                        let _ = c.save();
+                        tray.set_command_mode(false);
+                        log::info!("chord pressed -> listen suspended");
+                    }
+                    drop(c);
+                    let latched = matches!(ev, HotkeyEvent::StartLatched);
+                    start_capture(
+                        &cfg,
+                        &recording,
+                        &overlay,
+                        latched,
+                        &mut tray,
+                        &app_tx,
+                        &auto_stop_pending,
+                    );
+                }
                 HotkeyEvent::StopAndTranscribe => {
                     let was_auto = auto_stop_pending.swap(false, Ordering::SeqCst);
                     stop_and_transcribe(
                         &cfg, &recording, &overlay, &mut tray, &app_tx, was_auto,
-                    )
+                    );
+                    // Restore listen mode if the chord had paused it.
+                    if let Some((cont, cmd)) = suspended_listen.lock().take() {
+                        let mut c = cfg.lock();
+                        c.continuous = cont;
+                        c.command_mode = cmd;
+                        let _ = c.save();
+                        tray.set_command_mode(cmd);
+                        log::info!("listen restored after dictation");
+                    }
                 }
                 HotkeyEvent::DiscardRecording => discard(&recording, &overlay, &mut tray),
                 HotkeyEvent::MaybeDoubleTapExpired => {}
             },
+            Ok(AppMsg::Tray(TrayEvent::ToggleListen)) => {
+                handle_toggle_listen(
+                    &cfg,
+                    &recording,
+                    &overlay,
+                    &mut tray,
+                    &app_tx,
+                    &auto_stop_pending,
+                );
+            }
             Ok(AppMsg::Tray(ev)) => {
                 handle_tray_event(ev, &overlay, &cfg, &app_tx)?;
             }
@@ -238,6 +279,12 @@ fn handle_tray_event(
                 log::error!("save config after command-mode toggle: {e}");
             }
             log::info!("command-mode: {}", if enabled { "on" } else { "off" });
+        }
+        TrayEvent::ToggleListen => {
+            // The main loop has direct access to the recording slot + tray
+            // so it handles this event itself. This arm is unreachable now,
+            // but kept to keep the match exhaustive.
+            log::warn!("ToggleListen reached handle_tray_event (should be handled in main)");
         }
         TrayEvent::ToggleReplaceMaps(enabled) => {
             let mut c = cfg.lock();
@@ -469,16 +516,17 @@ fn stop_and_transcribe(
                         } else {
                             postprocess::ReplaceMap::default()
                         };
-                        let action = if command_mode {
-                            match postprocess::process_strict(&text, &map) {
-                                Some(a) => a,
-                                None => {
-                                    log::info!("command mode: no rule matched, dropped");
-                                    return;
-                                }
+                        let action_opt = postprocess::process_strict(&text, &map);
+                        if action_opt.is_some() {
+                            overlay_clone.replacement_hit();
+                        }
+                        let action = match (action_opt, command_mode) {
+                            (Some(a), _) => a,
+                            (None, true) => {
+                                log::info!("command mode: no rule matched, dropped");
+                                return;
                             }
-                        } else {
-                            postprocess::process(&text, &map)
+                            (None, false) => Action::Text(text.clone()),
                         };
                         match action {
                             Action::Enter => inject::press_enter(),
@@ -520,22 +568,101 @@ fn discard(
     tray.set_active(false);
 }
 
-/// Write the captured WAV to `%APPDATA%\whisper-local\last.wav` and a timestamped
-/// copy in `%APPDATA%\whisper-local\debug\<ts>.wav` so the user can replay it.
+/// Write the captured WAV to `%APPDATA%\whisper-local\last.wav` (always —
+/// single file, gets overwritten). When `WHISPER_DEBUG` is set, also write a
+/// timestamped copy under `debug/<ts>.wav` so chunks can be replayed.
 fn dump_wav_to_disk(wav: &[u8]) -> anyhow::Result<()> {
     let dir = whisper_local::config::config_dir()?;
     std::fs::create_dir_all(&dir)?;
     let last = dir.join("last.wav");
     std::fs::write(&last, wav)?;
-    let debug_dir = dir.join("debug");
-    let _ = std::fs::create_dir_all(&debug_dir);
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let _ = std::fs::write(debug_dir.join(format!("{ts}.wav")), wav);
+    if std::env::var("WHISPER_DEBUG").is_ok() {
+        let debug_dir = dir.join("debug");
+        let _ = std::fs::create_dir_all(&debug_dir);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = std::fs::write(debug_dir.join(format!("{ts}.wav")), wav);
+    }
     log::info!("wrote {}", last.display());
     Ok(())
+}
+
+/// Left-click on the tray icon: enter or leave "listen" mode. Toggles
+/// continuous + command_mode together AND starts / stops capture so the
+/// user doesn't have to press the chord for voice commands.
+fn handle_toggle_listen(
+    cfg: &Arc<Mutex<Config>>,
+    slot: &Arc<Mutex<Option<AudioCapture>>>,
+    overlay: &OverlayHandle,
+    tray: &mut Tray,
+    app_tx: &crossbeam_channel::Sender<AppMsg>,
+    auto_stop_pending: &Arc<AtomicBool>,
+) {
+    let was_on = {
+        let c = cfg.lock();
+        c.continuous && c.command_mode
+    };
+    let turn_on = !was_on;
+    {
+        let mut c = cfg.lock();
+        c.continuous = turn_on;
+        c.command_mode = turn_on;
+        let _ = c.save();
+    }
+    tray.set_command_mode(turn_on);
+    log::info!("listen: {}", if turn_on { "on" } else { "off" });
+    if turn_on {
+        start_capture(cfg, slot, overlay, true, tray, app_tx, auto_stop_pending);
+        force_latch();
+    } else {
+        discard(slot, overlay, tray);
+        force_idle();
+    }
+}
+
+/// Wrap this process in a Job Object with KILL_ON_JOB_CLOSE so all child
+/// processes (settings, transcribe-file, overlay) die when the tray exits or
+/// crashes. The job handle is intentionally leaked: it stays alive for the
+/// lifetime of this process and the OS closes it (firing the kill) on exit.
+fn bind_children_to_job() {
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::JobObjects::*;
+    use windows::Win32::System::Threading::GetCurrentProcess;
+    unsafe {
+        let job = match CreateJobObjectW(None, windows::core::PCWSTR::null()) {
+            Ok(h) if !h.is_invalid() => h,
+            Ok(_) | Err(_) => {
+                log::warn!("CreateJobObjectW failed; child cleanup disabled");
+                return;
+            }
+        };
+        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &info as *const _ as *const _,
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
+        .is_err()
+        {
+            log::warn!("SetInformationJobObject failed");
+            return;
+        }
+        let me: HANDLE = GetCurrentProcess();
+        if AssignProcessToJobObject(job, me).is_err() {
+            log::warn!("AssignProcessToJobObject failed");
+            return;
+        }
+        // HANDLE is Copy with no Drop — the OS keeps the handle open until
+        // CloseHandle or process exit. Process exit closes every handle, which
+        // triggers KILL_ON_JOB_CLOSE on the job, which kills all members
+        // (us + every child we spawned). Exactly what we want.
+        let _keep_alive = job;
+        log::info!("bound to job object — children die when tray exits");
+    }
 }
 
 /// On first launch (or on a fresh install), make sure `replace_maps/` exists
@@ -617,17 +744,58 @@ fn apply_transform(name: &str, s: &str) -> Option<String> {
 
 /// Spawn a shell command via `cmd /c`. Used by replace_map `!`-prefixed entries
 /// to launch programs by voice (e.g. `start battlefield:!"C:\bf.exe"`).
+/// URLs (or `start "" "<url>"` patterns) skip cmd.exe and go through
+/// `webbrowser::open`, which dodges cmd's ugly quoting rules. Other commands
+/// reach cmd via `raw_arg` so the verbatim line is preserved.
 fn run_shell(cmd: &str) {
+    use std::os::windows::process::CommandExt;
     let cmd = cmd.to_string();
     log::info!("run_shell: {cmd}");
+    if let Some(url) = extract_url_command(&cmd) {
+        std::thread::spawn(move || {
+            if let Err(e) = webbrowser::open(&url) {
+                log::error!("run_shell open url `{url}`: {e}");
+            }
+        });
+        return;
+    }
     std::thread::spawn(move || {
         let r = std::process::Command::new("cmd")
-            .args(["/c", &cmd])
+            .raw_arg(format!("/c {cmd}"))
             .spawn();
         if let Err(e) = r {
             log::error!("run_shell spawn: {e}");
         }
     });
+}
+
+/// Recognise common URL-launch patterns so we can call `webbrowser::open`
+/// directly instead of routing through cmd.exe (whose quote handling makes
+/// `start "" "https://..."` open `\\` half the time).
+fn extract_url_command(cmd: &str) -> Option<String> {
+    let t = cmd.trim();
+    if let Some(stripped) = strip_http_url(t) {
+        return Some(stripped);
+    }
+    let mut rest = t.strip_prefix("start ").or_else(|| t.strip_prefix("START "))?;
+    rest = rest.trim_start();
+    if let Some(after_empty_title) = rest.strip_prefix("\"\"") {
+        rest = after_empty_title.trim_start();
+    }
+    let unquoted = rest
+        .strip_prefix('"')
+        .and_then(|r| r.strip_suffix('"'))
+        .unwrap_or(rest);
+    strip_http_url(unquoted)
+}
+
+fn strip_http_url(s: &str) -> Option<String> {
+    let s = s.trim();
+    if s.starts_with("http://") || s.starts_with("https://") {
+        Some(s.to_string())
+    } else {
+        None
+    }
 }
 
 /// Send Ctrl+C to copy the current selection, POST it to `url` as a plain-text

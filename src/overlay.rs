@@ -16,6 +16,8 @@ pub enum OverlayCmd {
     ShowLatched,
     ShowError(String),
     PushRms(f32),
+    /// A replace-map rule fired — flash a green icon next to the wave.
+    ReplacementHit,
     Hide,
     Quit,
 }
@@ -28,6 +30,7 @@ impl OverlayHandle {
     pub fn show_latched(&self)   { let _ = self.0.send(OverlayCmd::ShowLatched); }
     pub fn show_error(&self, m: String) { let _ = self.0.send(OverlayCmd::ShowError(m)); }
     pub fn push_rms(&self, r: f32) { let _ = self.0.send(OverlayCmd::PushRms(r)); }
+    pub fn replacement_hit(&self) { let _ = self.0.send(OverlayCmd::ReplacementHit); }
     pub fn hide(&self)  { let _ = self.0.send(OverlayCmd::Hide); }
     pub fn quit(&self)  { let _ = self.0.send(OverlayCmd::Quit); }
 }
@@ -60,6 +63,8 @@ struct App {
     bars: Arc<Mutex<Vec<f32>>>,
     /// Exponentially-decaying peak, used to auto-normalize bar heights.
     peak: Arc<Mutex<f32>>,
+    /// When set, a replacement fired at this instant — flash an icon for ~1s.
+    replacement_at: Arc<Mutex<Option<Instant>>>,
 }
 
 #[cfg(feature = "overlay-ui")]
@@ -116,6 +121,9 @@ impl eframe::App for App {
                     *pk = *pk * 0.97 + r * 0.03;
                     if *pk < 0.05 { *pk = 0.05; }
                 }
+                OverlayCmd::ReplacementHit => {
+                    *self.replacement_at.lock() = Some(Instant::now());
+                }
                 OverlayCmd::Hide => {
                     *self.view.lock() = View::Hidden;
                 }
@@ -158,28 +166,32 @@ impl eframe::App for App {
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             match view {
                 View::Hidden => {}
-                View::Recording { latched, ready, .. } => {
+                View::Recording { ready, .. } => {
                     ui.horizontal_centered(|ui| {
                         let t = ui.input(|i| i.time) as f32;
-                        let (dot_rgb, label, freq) = if !ready {
-                            ((240, 180, 40), "Starting mic…", 5.0)
-                        } else if latched {
-                            ((255, 70, 70), "Listening (latched)", 6.0)
+                        let (dot_rgb, freq) = if !ready {
+                            ((240, 180, 40), 5.0)
                         } else {
-                            ((255, 70, 70), "Recording…", 6.0)
+                            ((255, 70, 70), 6.0)
                         };
                         let pulse = 0.6 + 0.4 * (t * freq).sin().abs();
                         draw_dot(ui, dot_rgb, pulse, 4.0);
-                        ui.label(
-                            egui::RichText::new(label)
-                                .color(egui::Color32::from_rgb(230, 230, 235))
-                                .size(11.0),
-                        );
                         if ready {
                             ui.add_space(6.0);
                             let bars = self.bars.lock().clone();
                             let peak = *self.peak.lock();
                             draw_bars(ui, &bars, peak);
+                        }
+                        // Replacement-hit indicator: bright green dot for ~1 s
+                        // after a rule fires.
+                        let rep = *self.replacement_at.lock();
+                        if let Some(ts) = rep {
+                            let age = ts.elapsed().as_secs_f32();
+                            if age < 1.0 {
+                                ui.add_space(6.0);
+                                let alpha = 1.0 - age;
+                                draw_dot(ui, (90, 220, 120), alpha, 5.0);
+                            }
                         }
                     });
                 }
@@ -329,7 +341,8 @@ pub fn run_main_thread() {
     let view = Arc::new(Mutex::new(View::Hidden));
     let bars = Arc::new(Mutex::new(Vec::new()));
     let peak = Arc::new(Mutex::new(0.05_f32));
-    let size = [280.0_f32, 44.0_f32];
+    let replacement_at: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
+    let size = [200.0_f32, 38.0_f32];
     let pos = bottom_center_of_cursor_monitor(size);
     log::info!("overlay child: pos=({:.0},{:.0})", pos[0], pos[1]);
     let mut vb = egui::ViewportBuilder::default()
@@ -345,7 +358,7 @@ pub fn run_main_thread() {
         vb = vb.with_icon(ic);
     }
     let opts = NativeOptions { viewport: vb, ..Default::default() };
-    let app = App { rx, view, bars, peak };
+    let app = App { rx, view, bars, peak, replacement_at };
     let result = eframe::run_native(
         "whisper-local-overlay",
         opts,
@@ -367,6 +380,7 @@ fn cmd_to_line(cmd: &OverlayCmd) -> String {
         OverlayCmd::ShowLatched => "LAT\n".into(),
         OverlayCmd::ShowError(m) => format!("ERR\t{}\n", m.replace('\n', " ")),
         OverlayCmd::PushRms(r) => format!("RMS\t{r}\n"),
+        OverlayCmd::ReplacementHit => "HIT\n".into(),
         OverlayCmd::Hide => "HID\n".into(),
         OverlayCmd::Quit => "QUI\n".into(),
     }
@@ -384,6 +398,7 @@ fn line_to_cmd(line: &str) -> Option<OverlayCmd> {
         "QUI" => Some(OverlayCmd::Quit),
         "ERR" => Some(OverlayCmd::ShowError(parts.next().unwrap_or("").to_string())),
         "RMS" => parts.next().and_then(|s| s.parse().ok()).map(OverlayCmd::PushRms),
+        "HIT" => Some(OverlayCmd::ReplacementHit),
         _ => None,
     }
 }

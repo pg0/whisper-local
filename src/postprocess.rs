@@ -201,9 +201,9 @@ pub fn process_strict(text: &str, map: &ReplaceMap) -> Option<Action> {
     if let Some(replacement) = map.plain.get(&key) {
         return Some(classify_value(replacement));
     }
-    let trimmed = text.trim();
+    let trimmed = strip_for_match(text);
     for (re, repl) in &map.regexes {
-        if let Some(caps) = re.captures(trimmed) {
+        if let Some(caps) = re.captures(&trimmed) {
             if let Some(m) = caps.get(0) {
                 if m.start() == 0 && m.end() == trimmed.len() {
                     let mut buf = String::new();
