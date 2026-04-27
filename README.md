@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Windows-11-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 11">
   <img src="https://img.shields.io/badge/Rust-1.75+-CE422B?style=for-the-badge&logo=rust&logoColor=white" alt="Rust">
-  <img src="https://img.shields.io/badge/Whisper-large--v3--turbo-7C3AED?style=for-the-badge" alt="Whisper">
+  <img src="https://img.shields.io/badge/Whisper-large--v3%20%2F%20turbo-7C3AED?style=for-the-badge" alt="Whisper">
   <img src="https://img.shields.io/badge/Backend-Docker_or_WSL2-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker / WSL2">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="MIT">
 </p>
@@ -193,6 +193,12 @@ If your machine is offline, it still works — as long as your Whisper server is
   <img src="assets/screenshots/transcribe-file.png" alt="Drag-and-drop file transcriber" width="48%">
 </p>
 
+<p align="center">
+  <img src="assets/screenshots/transcribe-short.png" alt="Short audio transcribed (15 s clip)" width="48%">
+  &nbsp;
+  <img src="assets/screenshots/transcribe-long.png" alt="Long video transcribed (62 min, 9 k words)" width="48%">
+</p>
+
 ---
 
 ## 📦 Requirements
@@ -202,7 +208,7 @@ If your machine is offline, it still works — as long as your Whisper server is
   - `POST /v1/audio/transcriptions` (multipart audio file in)
   - `GET  /health`
 - Default target: `http://localhost:10010`. Configurable in Settings.
-- Tested against **faster-whisper-large-v3-turbo** running in Docker on the same machine, and the same model running in WSL2 with CUDA.
+- Tested against **faster-whisper-large-v3-turbo** and **faster-whisper-large-v3** running in Docker on the same machine, and the same models running in WSL2 with CUDA.
 
 That's it. No login. No cloud account. No paid tier.
 
