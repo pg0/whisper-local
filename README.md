@@ -32,6 +32,14 @@ double-click tray icon         →  drag-and-drop file transcriber
 right-click tray icon          →  microphone, language, replace maps, settings
 ```
 
+<p align="center">
+  <img src="assets/screenshots/tray-icon.png" alt="Tray icon in the Windows taskbar">
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/menu-main.png" alt="Right-click tray menu" width="320">
+</p>
+
 ### Recording modes *(checkboxes in Settings + tray)*
 
 | mode | behaviour |
@@ -44,6 +52,12 @@ right-click tray icon          →  microphone, language, replace maps, settings
 | **Listen mode** (left-click tray) | Turns Continuous typing + Drop non-commands on together and latches the mic. Click again to stop. Pressing `Ctrl+Win` mid-listen pauses it for one dictation and restores it afterwards. |
 
 Shared silence threshold `[0.01]` (mic RMS below counts as silence).
+
+<p align="center">
+  <img src="assets/screenshots/menu-language.png" alt="Language submenu" width="48%">
+  &nbsp;
+  <img src="assets/screenshots/menu-microphone.png" alt="Microphone submenu" width="48%">
+</p>
 
 ### Replace maps
 
@@ -63,7 +77,13 @@ whole chunk case-insensitive; trailing `.!?,;:` is stripped.
 | `/pattern/flags` | regex trigger (`i`, `m`, `s`, `x`). Whole-chunk match (`/^...$/`) expands captures into the value, then treats it as an action — enabling parameterised commands. |
 
 Six maps ship as templates and can be toggled per-domain in the tray:
-**global · launch · programming · medical · legal · ai**. The `ai` map
+**global · launch · programming · medical · legal · ai**.
+
+<p align="center">
+  <img src="assets/screenshots/menu-replace-maps.png" alt="Replace maps submenu" width="480">
+</p>
+
+The `ai` map
 contains ready-to-use triggers for **Claude CLI, OpenAI, OpenRouter,
 Ollama, LM Studio, vLLM, and llama.cpp** — both inline PowerShell
 oneliners and matching helper scripts (`.ps1` and `.py`, stdlib-only)
@@ -166,6 +186,12 @@ If your machine is offline, it still works — as long as your Whisper server is
 4. Right-click the tray → **Settings** → set Whisper URL, microphone, language.
 5. Hold **Ctrl+Win** anywhere → speak → release. Transcript types into whatever window has focus.
 6. Double-click the tray → drag any audio / video file onto the small window for offline file transcription.
+
+<p align="center">
+  <img src="assets/screenshots/settings.png" alt="Settings window" width="48%">
+  &nbsp;
+  <img src="assets/screenshots/transcribe-file.png" alt="Drag-and-drop file transcriber" width="48%">
+</p>
 
 ---
 
